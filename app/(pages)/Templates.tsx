@@ -1,5 +1,15 @@
 import React, { useState } from 'react';
-import { Alert, FlatList, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import {
+    Alert,
+    FlatList,
+    Keyboard,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    TouchableWithoutFeedback,
+    View,
+} from 'react-native';
 
 export interface Template {
     id: string;
@@ -70,7 +80,8 @@ export default function Templates({
 
     if (mode === 'add') {
         return (
-            <View style={styles.container}>
+            <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+                <View style={styles.container}>
                 <Text style={styles.title}>テンプレートを作成</Text>
 
                 <View style={styles.card}>
@@ -80,6 +91,9 @@ export default function Templates({
                         placeholder="例：いつもの朝食"
                         value={templateName}
                         onChangeText={setTemplateName}
+                        returnKeyType="done"
+                        onSubmitEditing={() => Keyboard.dismiss()}
+                        blurOnSubmit={true}
                     />
 
                     <Text style={styles.label}>品目</Text>
@@ -88,6 +102,9 @@ export default function Templates({
                         placeholder="例：ランチ"
                         value={templateItem}
                         onChangeText={setTemplateItem}
+                        returnKeyType="done"
+                        onSubmitEditing={() => Keyboard.dismiss()}
+                        blurOnSubmit={true}
                     />
 
                     <Text style={styles.label}>金額</Text>
@@ -97,6 +114,9 @@ export default function Templates({
                         value={templateAmount}
                         onChangeText={setTemplateAmount}
                         keyboardType="numeric"
+                        returnKeyType="done"
+                        onSubmitEditing={() => Keyboard.dismiss()}
+                        blurOnSubmit={true}
                     />
 
                     <Text style={styles.label}>カテゴリ</Text>
@@ -135,7 +155,8 @@ export default function Templates({
                 >
                     <Text style={{ color: '#666', textAlign: 'center' }}>キャンセル</Text>
                 </TouchableOpacity>
-            </View>
+                </View>
+            </TouchableWithoutFeedback>
         );
     }
 
