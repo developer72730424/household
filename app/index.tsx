@@ -108,8 +108,6 @@ export default function App() {
         }
     }, []);
 
-    // 追加処理は下でメモ化した addEntry を使用します
-
     // 1. 表示中の年月を「YYYY/M」の形式にする（例: 2026/1）
     const displayYearMonth = `${currentMonth.getFullYear()}/${currentMonth.getMonth() + 1}`;
 
@@ -287,31 +285,42 @@ export default function App() {
     // FAB 用の旧処理は不要になったため削除
 
     if (currentScreen === 'add') {
+        // Input screen needs to show the native DateTimePicker when requested.
+        // Previously the picker was only rendered in the main screen return path,
+        // so opening the picker from the input screen had no visible effect.
+        // Render the InputItem and the DateTimePicker together here so
+        // onShowPicker (which sets showPicker) actually displays the picker.
         return (
-            <InputItem
-                item={item}
-                setItem={setItem}
-                amount={amount}
-                setAmount={setAmount}
-                selectedCategory={selectedCategory}
-                setSelectedCategory={setSelectedCategory}
-                categories={categories}
-                onAddCategory={addCategory}
-                onSave={() => {
-                    addEntry();
-                    setCurrentScreen('history');
-                }}
-                onCancel={() => setCurrentScreen('history')}
-                onShowPicker={() => setShowPicker(true)}
-                dateText={formatDate(date)}
-                isEditMode={isEditMode}
-                onUpdate={() => {
-                    updateEntry();
-                    setCurrentScreen('history');
-                }}
-                templates={templates}
-                onSelectTemplate={selectTemplate}
-            />
+            <>
+                <InputItem
+                    item={item}
+                    setItem={setItem}
+                    amount={amount}
+                    setAmount={setAmount}
+                    selectedCategory={selectedCategory}
+                    setSelectedCategory={setSelectedCategory}
+                    categories={categories}
+                    onAddCategory={addCategory}
+                    onSave={() => {
+                        addEntry();
+                        setCurrentScreen('history');
+                    }}
+                    onCancel={() => setCurrentScreen('history')}
+                    onSelectDate={(d: Date) => setDate(d)}
+                    dateText={formatDate(date)}
+                    isEditMode={isEditMode}
+                    onUpdate={() => {
+                        updateEntry();
+                        setCurrentScreen('history');
+                    }}
+                    templates={templates}
+                    onSelectTemplate={selectTemplate}
+                />
+
+                {showPicker && (
+                    <DateTimePicker value={date} mode="date" display="default" onChange={onDateChange} />
+                )}
+            </>
         );
     }
     if (currentScreen === 'settings') {

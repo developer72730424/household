@@ -1,5 +1,5 @@
-import React from 'react';
-import { Keyboard, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { Keyboard, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import type { Template } from './Templates';
 
 
@@ -14,20 +14,65 @@ interface InputItemProps {
     categories: string[];
     onAddCategory: (newCat: string) => void;
     onSave: () => void;
+    onShowPicker?: () => void;
     onCancel: () => void;
-    onShowPicker: () => void;
+    onSelectDate?: (d: Date) => void;
     dateText: string;
     isEditMode?: boolean;
     onUpdate?: () => void;
     templates?: Template[];
     onSelectTemplate?: (template: Template) => void;
+
 }
 
 export default function InputItem({
     item, setItem, amount, setAmount, selectedCategory, setSelectedCategory,
-    categories, onAddCategory, onSave, onCancel, onShowPicker, dateText,
+    categories, onAddCategory, onSave, onCancel, onSelectDate, dateText,
     isEditMode = false, onUpdate, templates = [], onSelectTemplate
 }: InputItemProps) {
+    // ローカルな UI state
+    const [modalVisible, setModalVisible] = useState(false);
+
+    // parse dateText (format: YYYY/M/D) into Date
+    const parsedDate = useMemo(() => {
+        try {
+            const parts = dateText.split('/').map(Number);
+            if (parts.length >= 3) return new Date(parts[0], parts[1] - 1, parts[2]);
+        } catch (e) {}
+        return new Date();
+    }, [dateText]);
+
+    const [calendarMonth, setCalendarMonth] = useState(() => new Date(parsedDate.getFullYear(), parsedDate.getMonth(), 1));
+
+    // regenerate calendar when calendarMonth changes
+    const weeks = useMemo(() => {
+        const year = calendarMonth.getFullYear();
+        const month = calendarMonth.getMonth();
+        const firstDay = new Date(year, month, 1);
+        const lastDay = new Date(year, month + 1, 0);
+        const startDay = firstDay.getDay(); // 0 Sun .. 6 Sat
+
+        const days: Array<Date | null> = [];
+        // pad before
+        for (let i = 0; i < startDay; i++) days.push(null);
+        for (let d = 1; d <= lastDay.getDate(); d++) days.push(new Date(year, month, d));
+
+        // chunk into weeks
+        const rows: Array<Array<Date | null>> = [];
+        for (let i = 0; i < days.length; i += 7) rows.push(days.slice(i, i + 7));
+        // ensure at least 6 weeks for consistent height
+        while (rows.length < 6) rows.push(new Array(7).fill(null));
+        return rows;
+    }, [calendarMonth]);
+
+    const goPrevMonth = () => setCalendarMonth(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
+    const goNextMonth = () => setCalendarMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
+
+    const selectDate = (d: Date) => {
+        onSelectDate?.(d);
+        setModalVisible(false);
+    };
+
     // ローカルな UI state
     return (
         <View style={styles.fullScreenContainer}>
@@ -67,9 +112,51 @@ export default function InputItem({
                         ))}
                     </View>
 
-                    <TouchableOpacity style={styles.dateSelector} onPress={onShowPicker}>
+                    <TouchableOpacity style={styles.dateSelector} onPress={() => setModalVisible(true)}>
                         <Text style={{ color: '#1A1A1A', fontWeight: '500' }}>📅 日付：{dateText}</Text>
                     </TouchableOpacity>
+
+                    <Modal visible={modalVisible} transparent animationType="slide">
+                        <View style={modalStyles.overlay}>
+                            <View style={modalStyles.container}>
+                                <View style={modalStyles.header}>
+                                    <TouchableOpacity onPress={goPrevMonth} style={modalStyles.navBtn}><Text>‹</Text></TouchableOpacity>
+                                    <Text style={modalStyles.headerTitle}>{calendarMonth.getFullYear()}年 {calendarMonth.getMonth() + 1}月</Text>
+                                    <TouchableOpacity onPress={goNextMonth} style={modalStyles.navBtn}><Text>›</Text></TouchableOpacity>
+                                </View>
+
+                                <View style={modalStyles.weekdaysRow}>
+                                    {['日','月','火','水','木','金','土'].map((w) => (
+                                        <Text key={w} style={modalStyles.weekday}>{w}</Text>
+                                    ))}
+                                </View>
+
+                                {weeks.map((week, wi) => (
+                                    <View key={wi} style={modalStyles.weekRow}>
+                                        {week.map((d, di) => {
+                                            const isSelected = d && parsedDate && d.getFullYear() === parsedDate.getFullYear() && d.getMonth() === parsedDate.getMonth() && d.getDate() === parsedDate.getDate();
+                                            return (
+                                                <TouchableOpacity
+                                                    key={di}
+                                                    style={[modalStyles.dayCell, isSelected && modalStyles.dayCellSelected]}
+                                                    onPress={() => d && selectDate(d)}
+                                                    disabled={!d}
+                                                >
+                                                    <Text style={[modalStyles.dayText, isSelected && modalStyles.dayTextSelected]}>{d ? d.getDate() : ''}</Text>
+                                                </TouchableOpacity>
+                                            );
+                                        })}
+                                    </View>
+                                ))}
+
+                                <View style={modalStyles.footerRow}>
+                                    <TouchableOpacity style={modalStyles.footerBtn} onPress={() => setModalVisible(false)}>
+                                        <Text style={modalStyles.footerBtnText}>キャンセル</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
+                        </View>
+                    </Modal>
 
                         {templates && templates.length > 0 && (
                             <>
@@ -263,4 +350,80 @@ const styles = StyleSheet.create({
         fontSize: 15,
         fontWeight: '600',
     },
+});
+
+const modalStyles = StyleSheet.create({
+    overlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.4)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 20,
+    },
+    container: {
+        width: '100%',
+        maxWidth: 520,
+        backgroundColor: '#fff',
+        borderRadius: 12,
+        padding: 12,
+    },
+    header: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingVertical: 8,
+    },
+    navBtn: {
+        padding: 8,
+    },
+    headerTitle: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: '#1A1A1A',
+    },
+    weekdaysRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        paddingVertical: 6,
+    },
+    weekday: {
+        width: 36,
+        textAlign: 'center',
+        color: '#888',
+        fontWeight: '700',
+    },
+    weekRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        paddingVertical: 6,
+    },
+    dayCell: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    dayCellSelected: {
+        backgroundColor: '#5B4FA3',
+    },
+    dayText: {
+        color: '#222',
+    },
+    dayTextSelected: {
+        color: '#fff',
+        fontWeight: '700',
+    },
+    footerRow: {
+        marginTop: 8,
+        alignItems: 'flex-end',
+    },
+    footerBtn: {
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+    },
+    footerBtnText: {
+        color: '#5B4FA3',
+        fontWeight: '700',
+    }
 });
