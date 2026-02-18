@@ -5,6 +5,7 @@ import { Alert, Dimensions, FlatList, Keyboard, Platform, StyleSheet, Text, Touc
 import { PieChart } from 'react-native-chart-kit';
 import CategorySettings from './(pages)/CategorySettings';
 import Export from './(pages)/Export';
+import InputIncome from './(pages)/InputIncome';
 import InputItem from './(pages)/InputItem';
 import SearchFilter from './(pages)/SearchFilter';
 import Statistics from './(pages)/Statistics';
@@ -37,7 +38,7 @@ export default function App() {
     const [date, setDate] = useState(new Date()); // 選択された日付オブジェクト
     const [showPicker, setShowPicker] = useState(false); // カレンダーを表示するかどうか
     const [currentMonth, setCurrentMonth] = useState(new Date()); // 表示中の年月
-    const [currentScreen, setCurrentScreen] = useState<'history' | 'add' | 'settings' | 'statistics' | 'search' | 'export' | 'templates'>('history');
+    const [currentScreen, setCurrentScreen] = useState<'history' | 'add' | 'income' | 'settings' | 'statistics' | 'search' | 'export' | 'templates'>('history');
     const [categories, setCategories] = useState<string[]>(['食費', '日用品', 'その他']); // 初期値
     const CATEGORY_STORAGE_KEY = '@app_categories'; // 保存用のキー
     const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -135,9 +136,15 @@ export default function App() {
         return history.filter(item => item.date?.startsWith(displayYearMonth));
     }, [history, displayYearMonth]);
 
-    // 当月の合計支出を計算
+    // 当月の収支を計算（収入 - 支出）
     const monthlyTotal = useMemo(() => {
-        return filteredHistory.reduce((sum, it) => sum + Number(it.amount), 0);
+        const income = filteredHistory
+            .filter(it => it.category === '収入')
+            .reduce((sum, it) => sum + Number(it.amount), 0);
+        const expense = filteredHistory
+            .filter(it => it.category !== '収入')
+            .reduce((sum, it) => sum + Number(it.amount), 0);
+        return income - expense;
     }, [filteredHistory]);
 
     // delete/startEdit/update は下でメモ化した関数を使用します
@@ -161,27 +168,26 @@ export default function App() {
         return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
     };
 
-    // カテゴリ合計を先に計算して再利用（メモ化）
-    const categoryTotals = useMemo(() => {
+    // フィルタ済み履歴から支出（収入以外）をカテゴリ別に集計する（グラフ用）
+    const expenseCategoryTotals = useMemo(() => {
         const map: Record<string, number> = {};
-        categories.forEach(cat => {
-            map[cat] = filteredHistory
-                .filter(entry => entry.category === cat)
-                .reduce((sum, cur) => sum + Number(cur.amount), 0);
+        filteredHistory.forEach(entry => {
+            if (entry.category === '収入') return; // 収入は除外
+            map[entry.category] = (map[entry.category] || 0) + Number(entry.amount);
         });
         return map;
-    }, [categories, filteredHistory]);
+    }, [filteredHistory]);
 
     const chartData = useMemo(() => {
         const colors = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF'];
-        return categories.map((cat, index) => ({
+        return Object.keys(expenseCategoryTotals).map((cat, index) => ({
             name: cat,
-            amount: categoryTotals[cat] || 0,
+            amount: expenseCategoryTotals[cat] || 0,
             color: colors[index % colors.length],
             legendFontColor: '#7F7F7F',
             legendFontSize: 12,
         })).filter(d => d.amount > 0);
-    }, [categories, categoryTotals]);
+    }, [expenseCategoryTotals]);
 
     // カテゴリ削除用の関数
     const deleteCategory = useCallback(async (targetCat: string) => {
@@ -236,6 +242,26 @@ export default function App() {
         setAmount('');
         Keyboard.dismiss();
     }, [item, amount, selectedCategory, date, history, saveData]);
+
+    const addIncome = useCallback(() => {
+        if (item === '' || amount === '') return;
+
+        const newEntry: HistoryItem = {
+            id: Date.now().toString(),
+            item: item,
+            amount: amount,
+            category: '収入',
+            date: formatDate(date),
+        };
+
+        const newHistory = [newEntry, ...history];
+        setHistory(newHistory);
+        saveData(newHistory);
+
+        setItem('');
+        setAmount('');
+        Keyboard.dismiss();
+    }, [item, amount, date, history, saveData]);
 
     const deleteEntry = useCallback((id: string) => {
         const newHistory = history.filter((item) => item.id !== id);
@@ -315,6 +341,29 @@ export default function App() {
                     }}
                     templates={templates}
                     onSelectTemplate={selectTemplate}
+                />
+
+                {showPicker && (
+                    <DateTimePicker value={date} mode="date" display="default" onChange={onDateChange} />
+                )}
+            </>
+        );
+    }
+    if (currentScreen === 'income') {
+        return (
+            <>
+                <InputIncome
+                    item={item}
+                    setItem={setItem}
+                    amount={amount}
+                    setAmount={setAmount}
+                    onSave={() => {
+                        addIncome();
+                        setCurrentScreen('history');
+                    }}
+                    onCancel={() => setCurrentScreen('history')}
+                    onSelectDate={(d: Date) => setDate(d)}
+                    dateText={formatDate(date)}
                 />
 
                 {showPicker && (
@@ -504,27 +553,30 @@ export default function App() {
                         </View>
                     </View>
                 }
-                renderItem={({ item }) => (
-                    <TouchableOpacity
-                        style={styles.listItem}
-                        onPress={() => startEditEntry(item)}
-                        onLongPress={() => {
-                            Alert.alert('削除', `${item.item}を削除しますか？`, [
-                                { text: 'キャンセル', style: 'cancel' },
-                                { text: '削除', style: 'destructive', onPress: () => deleteEntry(item.id) }
-                            ]);
-                        }}
-                    >
-                        <View>
-                            <Text style={styles.listItemText}>{item.item}</Text>
-                            <Text style={{ fontSize: 12, color: '#666' }}>{item.category} | {item.date}</Text>
-                        </View>
-                        <View style={{ alignItems: 'flex-end' }}>
-                            <Text style={styles.listItemAmount}>¥{Number(item.amount).toLocaleString()}</Text>
-                            <Text style={{ fontSize: 10, color: '#999' }}>タップで編集・長押しで削除</Text>
-                        </View>
-                    </TouchableOpacity>
-                )}
+                renderItem={({ item }) => {
+                    const isIncome = item.category === '収入';
+                    return (
+                        <TouchableOpacity
+                            style={[styles.listItem, { borderLeftColor: isIncome ? '#34C759' : '#5B4FA3' }]}
+                            onPress={() => startEditEntry(item)}
+                            onLongPress={() => {
+                                Alert.alert('削除', `${item.item}を削除しますか？`, [
+                                    { text: 'キャンセル', style: 'cancel' },
+                                    { text: '削除', style: 'destructive', onPress: () => deleteEntry(item.id) }
+                                ]);
+                            }}
+                        >
+                            <View>
+                                <Text style={styles.listItemText}>{item.item}</Text>
+                                <Text style={{ fontSize: 12, color: '#666' }}>{item.category} | {item.date}</Text>
+                            </View>
+                            <View style={{ alignItems: 'flex-end' }}>
+                                <Text style={[styles.listItemAmount, isIncome && { color: '#34C759' }]}>{isIncome ? `¥${Number(item.amount).toLocaleString()}` : `¥${Number(item.amount).toLocaleString()}`}</Text>
+                                <Text style={{ fontSize: 10, color: '#999' }}>タップで編集・長押しで削除</Text>
+                            </View>
+                        </TouchableOpacity>
+                    );
+                }}
             />
 
             {/* --- ★ ここから追加：メニューが開いている時の背景オーバーレイ --- */}
@@ -577,7 +629,7 @@ export default function App() {
                         style={styles.menuItem}
                         onPress={() => { setCurrentScreen('statistics'); setIsMenuOpen(false); }}
                     >
-                        <Text style={styles.menuLabel}>支出統計</Text>
+                        <Text style={styles.menuLabel}>収支統計</Text>
                         <View style={[styles.miniCircle, { backgroundColor: '#34C759' }]}>
                             <Text style={{ color: '#fff' }}>📊</Text>
                         </View>
@@ -602,6 +654,17 @@ export default function App() {
                         <Text style={styles.menuLabel}>支出を入力</Text>
                         <View style={[styles.miniCircle, { backgroundColor: '#FF2D55' }]}>
                             <Text style={{ color: '#fff' }}>✍️</Text>
+                        </View>
+                    </TouchableOpacity>
+
+                    {/* 収入入力ボタン */}
+                    <TouchableOpacity
+                        style={styles.menuItem}
+                        onPress={() => { setCurrentScreen('income'); setIsMenuOpen(false); }}
+                    >
+                        <Text style={styles.menuLabel}>収入を入力</Text>
+                        <View style={[styles.miniCircle, { backgroundColor: '#34C759' }]}>
+                            <Text style={{ color: '#fff' }}>💴</Text>
                         </View>
                     </TouchableOpacity>
                 </View>

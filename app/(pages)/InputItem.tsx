@@ -161,8 +161,13 @@ export default function InputItem({
                         {templates && templates.length > 0 && (
                             <>
                                 <Text style={[styles.label, { marginTop: 20 }]}>📋 よく使うテンプレート</Text>
-                                <View style={styles.templateRow}>
-                                    {templates.slice(0, 3).map((template: Template) => (
+                                {/* テンプレートが多い場合でもすべて参照できるように横スクロールにする */}
+                                <ScrollView
+                                    horizontal
+                                    showsHorizontalScrollIndicator={false}
+                                    contentContainerStyle={{ paddingVertical: 12 }}
+                                >
+                                    {templates.map((template: Template) => (
                                         <TouchableOpacity
                                             key={template.id}
                                             style={styles.templateQuick}
@@ -172,7 +177,7 @@ export default function InputItem({
                                             <Text style={styles.templateQuickAmount}>{template.amount}円</Text>
                                         </TouchableOpacity>
                                     ))}
-                                </View>
+                                </ScrollView>
                             </>
                         )}
                 </View>
