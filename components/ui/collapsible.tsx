@@ -12,7 +12,8 @@ export function Collapsible({ children, title }: PropsWithChildren & { title: st
   const theme = useColorScheme() ?? 'light';
 
   return (
-    <ThemedView>
+    // ライト/ダークともに白背景を指定し、外側のコンテナで完全に白く覆う
+    <ThemedView lightColor="#FFFFFF" darkColor="#FFFFFF" style={styles.container}>
       <TouchableOpacity
         style={styles.heading}
         onPress={() => setIsOpen((value) => !value)}
@@ -25,21 +26,43 @@ export function Collapsible({ children, title }: PropsWithChildren & { title: st
           style={{ transform: [{ rotate: isOpen ? '90deg' : '0deg' }] }}
         />
 
-        <ThemedText type="defaultSemiBold">{title}</ThemedText>
+        <ThemedText lightColor="#1A1A1A" darkColor="#1A1A1A" type="defaultSemiBold" style={styles.titleText}>{title}</ThemedText>
       </TouchableOpacity>
-      {isOpen && <ThemedView style={styles.content}>{children}</ThemedView>}
+      {isOpen && (
+        // 折りたたみ内の領域も白背景でラップして黒領域が見えないようにする
+        <ThemedView lightColor="#FFFFFF" darkColor="#FFFFFF" style={styles.content}>
+          {children}
+        </ThemedView>
+      )}
     </ThemedView>
   );
 }
 
 const styles = StyleSheet.create({
+  container: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginVertical: 6,
+  },
   heading: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    // ヘッダーは外側コンテナが白なので透明にする
+    backgroundColor: 'transparent',
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+  },
+  titleText: {
+    marginLeft: 8,
+    color: '#1A1A1A',
   },
   content: {
     marginTop: 6,
-    marginLeft: 24,
+    // 左余白をなくして中身が右に寄らないようにする
+    marginLeft: 0,
+    paddingHorizontal: 12,
+    paddingBottom: 12,
   },
 });
