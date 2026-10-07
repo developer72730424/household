@@ -9,6 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppDataProvider, useAppData } from '@/context/app-data';
 import { AppColors, useAppColors } from '@/hooks/use-app-colors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { HEADER_CONTENT_HEIGHT } from '@/hooks/use-header-height';
 
 export const unstable_settings = {
     anchor: 'index',
@@ -28,7 +29,7 @@ function Shell() {
     return (
         <View style={styles.root}>
             {/* 全画面共通のアプリヘッダー。上の余白は端末のノッチ・ステータスバーの高さに合わせる */}
-            <View style={[styles.header, { paddingTop: insets.top, height: insets.top + 44 }]}>
+            <View style={[styles.header, { paddingTop: insets.top, height: insets.top + HEADER_CONTENT_HEIGHT }]}>
                 <Text style={styles.title}>シンプル家計簿</Text>
             </View>
 

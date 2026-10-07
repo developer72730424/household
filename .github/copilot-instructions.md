@@ -1,105 +1,66 @@
 # 家計簿アプリ向けAIコーディングエージェント指示書
 
 ## プロジェクト概要
-ExpoベースのReact Nativeで構築された家計簿管理アプリです。カテゴリ別支出追跡、AsyncStorageによる永続データ保存、チャート表示、ダーク/ライトテーマ対応が特徴です。
+Expo（React Native）+ expo-router で作った「シンプル家計簿」。アカウント不要・端末内保存のみ・UIは日本語。
+支出/収入の記録、カテゴリ、予算、固定費の自動登録、統計、検索、バックアップ/復元、ダークモードに対応。
 
-## アーキテクチャと主要パターン
-
-### ファイルベースルーティング（Expo Router）
-- **ルートレイアウト**: `app/_layout.tsx` - テーマプロバイダーとメインスタック
-- **タブナビゲーション**: `app/(pages)/_layout.tsx` - 現在は"家計簿"タブ1つ
-- **メイン画面**: `app/index.tsx`（444行）- 支出ロジックと状態管理：
-  - 支出履歴（STORAGE_KEY = `@expense_history`）
-  - カテゴリ（STORAGE_KEY = `@app_categories`）
-  - 日付選択とチャート表示
-- **ページコンポーネント**: `app/(pages)/*.tsx` - サブコンポーネント（`InputItem`, `CategorySettings`）をPropsで渡す
-
-### データ永続化パターン
-- **AsyncStorage**を唯一のデータ保存手段として使用（バックエンド無し）
-- 状態変更時は必ず`saveData()`を呼び出して永続化
-- カテゴリはアプリ起動時に`index.tsx`の`useEffect`で読み込み
-- インターフェースはコンポーネントファイル内に定義（例：`index.tsx`内の`HistoryItem`）
-
-### テーミングシステム
-- テーマ色定義: `constants/theme.ts` - `Colors`オブジェクトにライト/ダークモード対応
-- `useThemeColor()`フックでスキーム適応
-- `ThemedText`, `ThemedView`がReact Nativeコンポーネントをテーマ対応させる
-- プラットフォーム別フォントは`Fonts`定数で管理
-
-### コンポーネント構成
-- **共有UIコンポーネント**: `components/` - `ThemedText`, `ThemedView`, `HapticTab`
-- **ページレベルコンポーネント**: `app/(pages)/` - ステートフルなページ画面
-- **Propsパターン**: 状態セッターをPropsで受け取る（Context/Redux未使用）- `InputItem.tsx`の10-19行参照
-- **ハプティックフィードバック**: ナビゲーション用の`HapticTab`
-
-## 開発ワークフロー
-
-### 実行コマンド
-```bash
-npm start              # 開発サーバー起動
-npm run android        # Androidエミュレータ実行
-npm run ios            # iOSシミュレータ実行
-npm run web            # Web実行
-npm run lint           # ESLint実行
-npm run reset-project  # テンプレートへリセット
+## ディレクトリ構成
+```
+app/                 expo-router のルート（1ファイル = 1画面）。薄い接続層だけを置く
+  _layout.tsx        共通ヘッダー + AppDataProvider + Stack
+  index.tsx          ホーム（月の収支・予算・履歴・＋ボタン・☰メニュー）
+  add.tsx / income.tsx   支出・収入の入力と編集（?id= で編集、add は ?templateId= も可）
+  statistics.tsx search.tsx recurring.tsx templates.tsx categories.tsx export.tsx
+components/
+  screens/           各画面の見た目（props で受け取るだけ。データ操作は持たない）
+  calendar-modal.tsx 共通のカレンダー選択（日付入力はすべてこれを使う）
+  budget-card.tsx backup-banner.tsx
+context/app-data.tsx 全データの読み込み・移行・保存（唯一の保存窓口）
+utils/               React Native に依存しない純粋な関数。テストの対象
+  entries.ts         型・日付/金額の正規化・集計・旧データ移行
+  recurring.ts       固定費の自動登録
+  backup.ts          バックアップの作成/読み込み、案内の表示判定
+hooks/               use-app-colors（配色）, use-go-back（戻る）
+tests/               node:test による単体テスト（utils のみ）
+plugins/             Expo config plugin（Xcode 27 ビルド対策）
 ```
 
-### テスト・デバッグ
-- **リント**: `eslint-config-expo`経由のESLint - コミット前に実行
-- **AsyncStorage検査**: デバイス/エミュレータストレージに保存 - React Native DebuggerまたはConsoleで確認
-- **テーマ切り替え**: デバイスシステム設定で確認（アプリUIに手動切り替えはまだ未実装）
+## データの決まり（重要）
+- 記録は `Entry`（`utils/entries.ts`）: `amount` は**正の整数（円）**、`date` は**`YYYY-MM-DD`（ゼロ埋め）**、収入か支出かは **`type`**（`'income' | 'expense'`）で持つ。
+- 「収入」は予約名。カテゴリ名にはできない（`INCOME_LABEL`）。収入の記録のカテゴリは常に `収入`。
+- 月の絞り込みは `monthKey(date)`（`YYYY-MM`）の**完全一致**で行う。`startsWith('2026-1')` のような前方一致は 10〜12月と混ざるので使わない。
+- 金額入力は `validateAmountInput()`、日付は `toDateString()` / `dateFromString()` を通す。文字列連結で日付を作らない。
+- 保存は **`useAppData()` の操作関数**（`addEntry` など）だけで行う。`AsyncStorage` を画面から直接触らない。
+- 保存形式を変えるときは、`utils/entries.ts` の `normalizeEntry` 等で旧形式も読めるようにし、起動時の移行（`context/app-data.tsx` の `loadAll`）を更新する。バックアップ（`utils/backup.ts`）も旧バージョンを読めること。
+- 保存キー: `@expense_history_Default`（履歴）, `@app_categories_Default`, `@app_templates_Default`, `@app_recurring_Default`, `@app_budget_Default`, `@app_last_backup_at`, `@app_backup_snooze_until`。旧形式の履歴は `@expense_history_Default_legacy_backup` に退避される。
 
-## プロジェクト固有の慣例
+## 画面を追加するとき
+1. `components/screens/○○.tsx` に見た目を作る（データは props で受ける）。
+2. `app/○○.tsx` を作って `useAppData()` から必要な値を渡す。戻る操作は `useGoBack()`。
+3. 遷移は `router.push('/○○')`。ホームの `MENU_ITEMS`（`app/index.tsx`）に追加すればメニューから開ける。
+4. 集計や判定のロジックは画面に書かず `utils/` に置いてテストを書く。
 
-### 日本語UI・多言語化
-- **すべてのUI文字列は日本語でハードコード**（i18nライブラリ未使用）
-- カテゴリデフォルト: `['食費', '日用品', 'その他']`
-- 画面モード: `'history' | 'add' | 'settings'`
-- 機能追加時もカテゴリとUI文字列は日本語で統一
+## 配色（ダークモード）
+- 色は `useAppColors()`（`hooks/use-app-colors.ts`）で取り、`StyleSheet` は `const createStyles = (c: AppColors) => StyleSheet.create({...})` + `useMemo(() => createStyles(c), [c])` の形にする。色の直書きはしない（ブランドの白文字 `#fff` などは可）。
+- チャートの色は `chartRgb` / `chartLabelRgb` を使う。
 
-### 状態管理
-- **Redux/Zustand未使用** - React Hooks + Propsドリリング
-- 親（`index.tsx`）が全アプリ状態を管理。子コンポーネント（`InputItem`, `CategorySettings`）は表示層のみ
-- 新機能追加時：
-  1. `index.tsx`でuseState/useEffectで状態定義
-  2. 状態とセッターを子コンポーネントにPropsで渡す
-  3. 変更後`saveData()`または`AsyncStorage.setItem()`を呼び出し
+## 開発コマンド
+```bash
+npm start            # 開発サーバー
+npm test             # 単体テスト（node:test、依存なし）
+npx tsc --noEmit     # 型チェック
+npm run lint         # ESLint（警告ゼロを維持する）
+```
+- 変更後は **型チェック・lint・テスト** をすべて通してからコミットする。
+- 日付・金額・移行・集計・バックアップを変えたら `tests/` にテストを足す。
 
-### プラットフォーム固有の考慮
-- **newArchEnabled: true** in `app.json` - React Native New Architecture使用
-- **Web対応**: `expo start --web`で実行（静的出力）
-- **Android端末の端まで表示**: `app.json`で有効化
-- Web専用フック追加時は`use-color-scheme.web.ts`を参照
+## 実機/シミュレーターで動かす
+- iOS ネイティブビルドは `ios/`（gitignore 済み）を `npx expo prebuild --clean --platform ios --no-install` で作り直し、`pod install` → `xcodebuild`（スキーム名は `app`）。
+- `plugins/with-xcode27-fixes.js` が Podfile を直す（Pod の最低 iOS を 15.1 に、fmt を C++17 に）。prebuild の後で `package.json` の `ios`/`android` スクリプトが `expo run:*` に書き換わるので元に戻すこと。
+- `pod install` は `PATH="/usr/bin:$PATH" LANG=en_US.UTF-8` で実行する（Anaconda の curl が先に使われると Hermes の取得に失敗する）。
+- Expo Go で試す場合は `npx expo start --offline`（`CI=1` は付けない。付けると編集が反映されない）。
 
-## 重要ファイル一覧
-- **メインロジック**: [app/index.tsx](app/index.tsx) - 444行。支出リスト、カテゴリ、日付選択、チャート処理
-- **入力フォーム**: [app/(pages)/InputItem.tsx](app/(pages)/InputItem.tsx) - 支出データ入力UI
-- **ページルート**: [app/(pages)/_layout.tsx](app/(pages)/_layout.tsx) - タブ構成管理
-- **テーマ設定**: [constants/theme.ts](constants/theme.ts) - 全色定義
-- **パッケージ設定**: [package.json](package.json) - ビルドスクリプト、Expoプラグイン
-
-## 主要依存パッケージ
-- **expo-router** v6.0.21 - ファイルベースルーティング
-- **@react-native-async-storage/async-storage** v2.2.0 - 永続ストレージ
-- **react-native-chart-kit** v6.12.0 - 円グラフ表示
-- **@react-native-community/datetimepicker** v8.4.4 - 日付選択
-- **expo-haptics** - 振動フィードバック
-- **react-native-reanimated** - アニメーション（導入済みだが未使用）
-
-## よくあるタスク
-
-### 新しい支出カテゴリ追加
-1. `app/index.tsx`の`addCategory()`関数でカテゴリリストを更新
-2. `AsyncStorage.setItem(CATEGORY_STORAGE_KEY, ...)`で永続化
-3. `setCategories()`の状態更新で自動再レンダリング
-
-### 新しいページ作成
-1. `app/(pages)/ページ名.tsx`を作成
-2. `app/(pages)/_layout.tsx`に`<Tabs.Screen name="ページ名" ... />`を追加
-3. 必要に応じて`app/index.tsx`から状態をPropsで渡す
-
-### スタイル指定ガイドライン
-- パフォーマンスのため`StyleSheet.create()`を使用（インラインスタイル不可）
-- テーマ対応色は`Colors[colorScheme]`を活用
-- 例：[components/themed-text.tsx](components/themed-text.tsx)がテーミングパターンを示している
-
+## 注意
+- UI文字列はすべて日本語で書く（i18n ライブラリは使っていない）。
+- 起動時のデータ読み込みが終わるまで画面は出さない（`app/_layout.tsx` の `loaded`）。
+- 固定費は起動時とアプリが前面に戻ったときに、発生日を過ぎた分を履歴へ追加する。

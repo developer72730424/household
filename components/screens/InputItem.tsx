@@ -3,6 +3,7 @@ import { Keyboard, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text,
 
 import CalendarModal from '@/components/calendar-modal';
 import { AppColors, useAppColors } from '@/hooks/use-app-colors';
+import { useHeaderHeight } from '@/hooks/use-header-height';
 import { formatDisplayDate, toDateString, type Template } from '@/utils/entries';
 
 interface InputItemProps {
@@ -27,12 +28,17 @@ export default function InputItem({
     date, onChangeDate, isEditMode = false, onSave, onCancel, templates = [], onSelectTemplate,
 }: InputItemProps) {
     const c = useAppColors();
+    const headerHeight = useHeaderHeight();
     const styles = useMemo(() => createStyles(c), [c]);
     const [calendarVisible, setCalendarVisible] = useState(false);
 
     return (
         // 数値キーボードには閉じるボタンが無いため、キーボード分だけ持ち上げて保存ボタンを隠さないようにする
-        <KeyboardAvoidingView style={styles.fullScreenContainer} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <KeyboardAvoidingView
+            style={styles.fullScreenContainer}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            keyboardVerticalOffset={headerHeight}
+        >
             <ScrollView
                 showsVerticalScrollIndicator={false}
                 style={styles.scrollContent}

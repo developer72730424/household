@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert } from 'react-native';
+import { Alert, AppState } from 'react-native';
 
 import { snoozeUntilFrom, type AppSnapshot, type ParsedBackup } from '@/utils/backup';
 import {
@@ -208,6 +208,19 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
             });
         return queue.current;
     }, []);
+
+    // アプリを閉じずに日をまたいだ場合に備えて、前面に戻ったときにも固定費の発生日を確認する
+    useEffect(() => {
+        if (!loaded) return;
+        const sub = AppState.addEventListener('change', (state) => {
+            if (state !== 'active') return;
+            const due = generateDueEntries(dataRef.current.recurring);
+            if (due.changed) {
+                void commit({ entries: [...due.entries.reverse(), ...dataRef.current.entries], recurring: due.updatedRules });
+            }
+        });
+        return () => sub.remove();
+    }, [loaded, commit]);
 
     const actions = useMemo<AppDataActions>(() => ({
         addEntry: (input) => {
