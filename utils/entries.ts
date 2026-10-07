@@ -271,3 +271,11 @@ export function normalizeTemplates(raw: unknown): Template[] {
     }
     return out;
 }
+
+// ---- 削除の取り消し ----
+
+// 削除した記録を一覧に戻す。同じIDの記録がすでにあれば何もしない（二重に戻さない）。
+// 並び順は表示時に日付で整えるので、先頭に足せばよい
+export function restoreDeleted(entries: Entry[], deleted: Entry): Entry[] {
+    return entries.some(e => e.id === deleted.id) ? entries : [deleted, ...entries];
+}

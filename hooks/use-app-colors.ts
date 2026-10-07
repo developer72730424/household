@@ -19,6 +19,9 @@ export interface AppColors {
     tintBg: string;       // ブランド色の薄い背景
     chartRgb: string;     // チャートの線・文字色（rgba() に埋め込む "r,g,b"）
     chartLabelRgb: string;
+    inverseText: string;  // 反転背景（スナックバーなど）の上の文字
+    inverseBg: string;    // 反転背景
+    inverseAccent: string; // 反転背景の上のボタン文字
 }
 
 export const AppPalette: { light: AppColors; dark: AppColors } = {
@@ -40,6 +43,9 @@ export const AppPalette: { light: AppColors; dark: AppColors } = {
         tintBg: '#E8EAF6',
         chartRgb: '26,26,26',
         chartLabelRgb: '100,100,100',
+        inverseText: '#FFFFFF',
+        inverseBg: '#2B2B2E',
+        inverseAccent: '#B7A9FF',
     },
     dark: {
         background: '#121212',
@@ -59,6 +65,9 @@ export const AppPalette: { light: AppColors; dark: AppColors } = {
         tintBg: '#2A2640',
         chartRgb: '242,242,242',
         chartLabelRgb: '176,176,176',
+        inverseText: '#1A1A1A',
+        inverseBg: '#EDEDF0',
+        inverseAccent: '#5B4FA3',
     },
 };
 

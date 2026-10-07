@@ -30,6 +30,8 @@ plugins/             Expo config plugin（Xcode 27 ビルド対策）
 - 「収入」は予約名。カテゴリ名にはできない（`INCOME_LABEL`）。収入の記録のカテゴリは常に `収入`。
 - 月の絞り込みは `monthKey(date)`（`YYYY-MM`）の**完全一致**で行う。`startsWith('2026-1')` のような前方一致は 10〜12月と混ざるので使わない。
 - 金額入力は `validateAmountInput()`、日付は `toDateString()` / `dateFromString()` を通す。文字列連結で日付を作らない。
+- カテゴリの名前変更・削除は `utils/categories.ts`（`renameCategory` / `removeCategory`）を通す。記録・テンプレート・固定費のカテゴリ名もいっしょに更新され、削除したカテゴリの記録は「その他」（なければ先頭）へ移る。
+- 記録を削除したら、`deleteEntry` の戻り値を `UndoSnackbar` に渡して「元に戻す」を出す（`restoreEntry` で戻せる）。
 - 保存は **`useAppData()` の操作関数**（`addEntry` など）だけで行う。`AsyncStorage` を画面から直接触らない。
 - 保存形式を変えるときは、`utils/entries.ts` の `normalizeEntry` 等で旧形式も読めるようにし、起動時の移行（`context/app-data.tsx` の `loadAll`）を更新する。バックアップ（`utils/backup.ts`）も旧バージョンを読めること。
 - 保存キー: `@expense_history_Default`（履歴）, `@app_categories_Default`, `@app_templates_Default`, `@app_recurring_Default`, `@app_budget_Default`, `@app_last_backup_at`, `@app_backup_snooze_until`。旧形式の履歴は `@expense_history_Default_legacy_backup` に退避される。

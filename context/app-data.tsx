@@ -3,8 +3,9 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { Alert, AppState } from 'react-native';
 
 import { snoozeUntilFrom, type AppSnapshot, type ParsedBackup } from '@/utils/backup';
+import { removeCategory, renameCategory } from '@/utils/categories';
 import {
-    hasLegacyShape, INCOME_LABEL, newEntryId, normalizeCategories, normalizeEntries, normalizeTemplates,
+    hasLegacyShape, INCOME_LABEL, newEntryId, normalizeCategories, normalizeEntries, normalizeTemplates, restoreDeleted,
     type Entry, type EntryType, type Template,
 } from '@/utils/entries';
 import { generateDueEntries, normalizeRules, type RecurringRule } from '@/utils/recurring';
@@ -51,17 +52,22 @@ export interface EntryInput {
 }
 
 export type ActionResult = { ok: true } | { ok: false; message: string };
+// カテゴリの変更結果。moved は、カテゴリが変わった記録の件数
+export type CategoryResult = { ok: true; moved: number } | { ok: false; message: string };
 
 interface AppDataActions {
     addEntry: (input: EntryInput) => Entry;
     updateEntry: (id: string, input: EntryInput) => void;
-    deleteEntry: (id: string) => void;
+    deleteEntry: (id: string) => Entry | null;
+    restoreEntry: (entry: Entry) => void;
     addCategory: (name: string) => ActionResult;
-    deleteCategory: (name: string) => void;
+    renameCategory: (from: string, to: string) => CategoryResult;
+    deleteCategory: (name: string) => CategoryResult;
     addTemplate: (template: Template) => void;
     deleteTemplate: (id: string) => void;
     setBudget: (budget: number | null) => void;
     addRecurring: (rule: RecurringRule) => void;
+    updateRecurring: (rule: RecurringRule) => void;
     deleteRecurring: (id: string) => void;
     restoreBackup: (parsed: Extract<ParsedBackup, { ok: true }>) => Promise<void>;
     resetEntries: () => Promise<void>;
@@ -232,7 +238,15 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
             void commit({ entries: dataRef.current.entries.map(e => (e.id === id ? { ...e, ...input } : e)) });
         },
         deleteEntry: (id) => {
-            void commit({ entries: dataRef.current.entries.filter(e => e.id !== id) });
+            const target = dataRef.current.entries.find(e => e.id === id) ?? null;
+            if (target) void commit({ entries: dataRef.current.entries.filter(e => e.id !== id) });
+            return target;
+        },
+        // 削除した記録を戻す。ID が同じ記録がすでにあれば何もしない（二重に戻さない）
+        restoreEntry: (entry) => {
+            const restored = restoreDeleted(dataRef.current.entries, entry);
+            if (restored === dataRef.current.entries) return;
+            void commit({ entries: restored });
         },
         addCategory: (name) => {
             const trimmed = name.trim();
@@ -242,8 +256,29 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
             void commit({ categories: [...dataRef.current.categories, trimmed] });
             return { ok: true };
         },
+        renameCategory: (from, to) => {
+            const d = dataRef.current;
+            const result = renameCategory(d, from, to);
+            if (!result.ok) return result;
+            void commit({
+                categories: result.data.categories,
+                entries: result.data.entries,
+                templates: result.data.templates,
+                recurring: result.data.recurring,
+            });
+            return { ok: true, moved: result.moved };
+        },
         deleteCategory: (name) => {
-            void commit({ categories: dataRef.current.categories.filter(c => c !== name) });
+            const d = dataRef.current;
+            const result = removeCategory(d, name);
+            if (!result.ok) return result;
+            void commit({
+                categories: result.data.categories,
+                entries: result.data.entries,
+                templates: result.data.templates,
+                recurring: result.data.recurring,
+            });
+            return { ok: true, moved: result.moved };
         },
         addTemplate: (template) => {
             void commit({ templates: [...dataRef.current.templates, template] });
@@ -256,6 +291,9 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         },
         addRecurring: (rule) => {
             void commit({ recurring: [...dataRef.current.recurring, rule] });
+        },
+        updateRecurring: (rule) => {
+            void commit({ recurring: dataRef.current.recurring.map(r => (r.id === rule.id ? rule : r)) });
         },
         deleteRecurring: (id) => {
             void commit({ recurring: dataRef.current.recurring.filter(r => r.id !== id) });

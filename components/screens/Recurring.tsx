@@ -9,17 +9,40 @@ interface RecurringProps {
     rules: RecurringRule[];
     categories: string[];
     onAdd: (rule: RecurringRule) => void;
+    onUpdate: (rule: RecurringRule) => void;
     onDelete: (id: string) => void;
     onBack: () => void;
 }
 
-export default function Recurring({ rules, categories, onAdd, onDelete, onBack }: RecurringProps) {
+export default function Recurring({ rules, categories, onAdd, onUpdate, onDelete, onBack }: RecurringProps) {
     const c = useAppColors();
     const styles = useMemo(() => createStyles(c), [c]);
     const [item, setItem] = useState('');
     const [amount, setAmount] = useState('');
     const [day, setDay] = useState('');
     const [category, setCategory] = useState(categories[0] ?? '食費');
+    // 編集中の固定費（null のときは新規追加）
+    const [editing, setEditing] = useState<RecurringRule | null>(null);
+
+    // 削除済みのカテゴリが設定されている固定費も、編集中はそのカテゴリを選択肢に残す
+    const categoryOptions = categories.includes(category) ? categories : [category, ...categories];
+
+    const resetForm = () => {
+        setEditing(null);
+        setItem('');
+        setAmount('');
+        setDay('');
+        setCategory(categories[0] ?? '食費');
+        Keyboard.dismiss();
+    };
+
+    const startEdit = (rule: RecurringRule) => {
+        setEditing(rule);
+        setItem(rule.item);
+        setAmount(String(rule.amount));
+        setDay(String(rule.day));
+        setCategory(rule.category);
+    };
 
     const handleAdd = () => {
         if (!item.trim()) {
@@ -37,24 +60,33 @@ export default function Recurring({ rules, categories, onAdd, onDelete, onBack }
             Alert.alert('入力エラー', '発生日は1〜28の整数で入力してください');
             return;
         }
-        onAdd({
-            id: newEntryId(),
-            item: item.trim(),
-            amount: amountCheck.value,
-            category,
-            day: dayValue,
-            lastGenerated: initialLastGenerated(dayValue),
-        });
-        setItem('');
-        setAmount('');
-        setDay('');
-        Keyboard.dismiss();
+        if (editing) {
+            // 登録済みの月（lastGenerated）はそのまま。金額・発生日を変えても、すでに登録した分は重複しない
+            onUpdate({ ...editing, item: item.trim(), amount: amountCheck.value, category, day: dayValue });
+        } else {
+            onAdd({
+                id: newEntryId(),
+                item: item.trim(),
+                amount: amountCheck.value,
+                category,
+                day: dayValue,
+                lastGenerated: initialLastGenerated(dayValue),
+            });
+        }
+        resetForm();
     };
 
     const confirmDelete = (rule: RecurringRule) => {
         Alert.alert('削除', `固定費「${rule.item}」を削除しますか？\n（登録済みの履歴は残ります）`, [
             { text: 'キャンセル', style: 'cancel' },
-            { text: '削除', style: 'destructive', onPress: () => onDelete(rule.id) },
+            {
+                text: '削除',
+                style: 'destructive',
+                onPress: () => {
+                    onDelete(rule.id);
+                    if (editing?.id === rule.id) resetForm();
+                },
+            },
         ]);
     };
 
@@ -99,7 +131,7 @@ export default function Recurring({ rules, categories, onAdd, onDelete, onBack }
                                 />
                             </View>
                             <View style={styles.categoryRow}>
-                                {categories.map(cat => (
+                                {categoryOptions.map(cat => (
                                     <TouchableOpacity
                                         key={cat}
                                         onPress={() => setCategory(cat)}
@@ -110,8 +142,13 @@ export default function Recurring({ rules, categories, onAdd, onDelete, onBack }
                                 ))}
                             </View>
                             <TouchableOpacity style={styles.addBtn} onPress={handleAdd}>
-                                <Text style={styles.addBtnText}>＋ 固定費を追加</Text>
+                                <Text style={styles.addBtnText}>{editing ? '✓ 固定費を更新' : '＋ 固定費を追加'}</Text>
                             </TouchableOpacity>
+                            {editing && (
+                                <TouchableOpacity style={styles.cancelEditBtn} onPress={resetForm}>
+                                    <Text style={styles.cancelEditText}>編集をやめる</Text>
+                                </TouchableOpacity>
+                            )}
                         </View>
                         {rules.length > 0 && (
                             <Text style={styles.sectionTitle}>登録中の固定費（月 ¥{monthlyTotal.toLocaleString()}）</Text>
@@ -120,16 +157,20 @@ export default function Recurring({ rules, categories, onAdd, onDelete, onBack }
                 }
                 ListEmptyComponent={<Text style={styles.empty}>まだ固定費が登録されていません</Text>}
                 renderItem={({ item: rule }) => (
-                    <View style={styles.listItem}>
+                    <TouchableOpacity
+                        style={[styles.listItem, editing?.id === rule.id && styles.listItemEditing]}
+                        onPress={() => startEdit(rule)}
+                        accessibilityLabel={`${rule.item}を編集`}
+                    >
                         <View style={{ flex: 1 }}>
                             <Text style={styles.listItemTitle}>{rule.item}</Text>
-                            <Text style={styles.listItemSub}>毎月{rule.day}日 | {rule.category}</Text>
+                            <Text style={styles.listItemSub}>毎月{rule.day}日 | {rule.category} | タップで編集</Text>
                         </View>
                         <Text style={styles.listItemAmount}>¥{rule.amount.toLocaleString()}</Text>
                         <TouchableOpacity onPress={() => confirmDelete(rule)} style={styles.deleteBtn}>
                             <Text style={{ color: c.danger }}>削除</Text>
                         </TouchableOpacity>
-                    </View>
+                    </TouchableOpacity>
                 )}
             />
         </View>
@@ -177,4 +218,7 @@ const createStyles = (c: AppColors) => StyleSheet.create({
     listItemSub: { fontSize: 12, color: c.textSecondary, marginTop: 2 },
     listItemAmount: { fontSize: 15, fontWeight: '700', color: c.primaryText, marginRight: 12 },
     deleteBtn: { paddingVertical: 4, paddingHorizontal: 6 },
+    listItemEditing: { borderWidth: 2, borderColor: c.primary },
+    cancelEditBtn: { padding: 12, alignItems: 'center', marginTop: 6 },
+    cancelEditText: { color: c.textSecondary, fontWeight: '600' },
 });

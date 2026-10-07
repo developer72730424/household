@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import {
     entriesInMonth, expenseByCategory, formatDisplayDate, hasLegacyShape, incomeBySource, monthlyTrend,
     normalizeCategories, normalizeDateString, normalizeEntries, normalizeEntry, parseAmount, sortEntries,
-    summarize, toDateString, validateAmountInput, type Entry,
+    restoreDeleted, summarize, toDateString, validateAmountInput, type Entry,
 } from '../utils/entries.ts';
 
 const e = (over: Partial<Entry>): Entry => ({
@@ -140,4 +140,19 @@ test('並び替え: 日付の新しい順、同じ日は元の順を保つ', () 
         e({ id: 'c', date: '2026-10-01' }),
     ]);
     assert.deepEqual(sorted.map(x => x.id), ['b', 'a', 'c']);
+});
+
+test('削除の取り消し: 戻した記録は一覧に入り、日付順の表示で元の位置に並ぶ', () => {
+    const a = e({ id: 'a', date: '2026-10-05' });
+    const b = e({ id: 'b', date: '2026-10-03' });
+    const c = e({ id: 'c', date: '2026-10-01' });
+    const after = restoreDeleted([a, c], b);
+    assert.equal(after.length, 3);
+    assert.deepEqual(sortEntries(after).map(x => x.id), ['a', 'b', 'c']);
+});
+
+test('削除の取り消し: すでに戻っている記録は二重に戻さない', () => {
+    const a = e({ id: 'a' });
+    const list = [a];
+    assert.equal(restoreDeleted(list, a), list); // 同じ配列をそのまま返す（変更なし）
 });

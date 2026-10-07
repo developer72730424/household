@@ -1,16 +1,17 @@
 import { useRouter, type Href } from 'expo-router';
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { Alert, Dimensions, FlatList, Modal, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { PieChart } from 'react-native-chart-kit';
 
 import BackupBanner from '@/components/backup-banner';
 import BudgetCard from '@/components/budget-card';
+import UndoSnackbar from '@/components/undo-snackbar';
 import { useAppData } from '@/context/app-data';
 import { AppColors, useAppColors } from '@/hooks/use-app-colors';
 import { shouldRemindBackup } from '@/utils/backup';
 import {
     entriesInMonth, expenseByCategory, formatDisplayDate, formatMonthJapanese, monthKeyOf, shiftMonth, sortEntries,
-    summarize,
+    summarize, type Entry,
 } from '@/utils/entries';
 
 const screenWidth = Dimensions.get('window').width;
@@ -30,10 +31,13 @@ export default function HomeScreen() {
     const c = useAppColors();
     const styles = useMemo(() => createStyles(c), [c]);
     const router = useRouter();
-    const { entries, budget, setBudget, deleteEntry, lastBackupAt, backupSnoozeUntil, snoozeBackup } = useAppData();
+    const { entries, budget, setBudget, deleteEntry, restoreEntry, lastBackupAt, backupSnoozeUntil, snoozeBackup } = useAppData();
     const [currentMonth, setCurrentMonth] = useState(() => new Date());
     const [isFabOpen, setIsFabOpen] = useState(false);
     const [isMenuOpen, setIsMenuOpen] = useState(false);
+    // 直前に削除した記録（数秒間だけ「元に戻す」を出す）
+    const [lastDeleted, setLastDeleted] = useState<Entry | null>(null);
+    const dismissUndo = useCallback(() => setLastDeleted(null), []);
 
     const monthEntries = useMemo(
         () => sortEntries(entriesInMonth(entries, monthKeyOf(currentMonth))),
@@ -225,7 +229,11 @@ export default function HomeScreen() {
                             onLongPress={() => {
                                 Alert.alert('削除', `${item.item}を削除しますか？`, [
                                     { text: 'キャンセル', style: 'cancel' },
-                                    { text: '削除', style: 'destructive', onPress: () => deleteEntry(item.id) },
+                                    {
+                                        text: '削除',
+                                        style: 'destructive',
+                                        onPress: () => setLastDeleted(deleteEntry(item.id)),
+                                    },
                                 ]);
                             }}
                         >
@@ -273,6 +281,16 @@ export default function HomeScreen() {
             >
                 <Text style={styles.floatingButtonText}>{isFabOpen ? '×' : '＋'}</Text>
             </TouchableOpacity>
+
+            <UndoSnackbar
+                message={lastDeleted ? `「${lastDeleted.item}」を削除しました` : null}
+                onUndo={() => {
+                    if (lastDeleted) restoreEntry(lastDeleted);
+                    setLastDeleted(null);
+                }}
+                onDismiss={dismissUndo}
+                bottom={118}
+            />
 
             {/* メニュー（その他の画面） */}
             <Modal visible={isMenuOpen} transparent animationType="slide" onRequestClose={() => setIsMenuOpen(false)}>
