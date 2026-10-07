@@ -1,10 +1,11 @@
 import React, { useState, useMemo } from 'react';
 import { AppColors, useAppColors } from '@/hooks/use-app-colors';
+import type { ActionResult } from '@/context/app-data';
 import { Alert, FlatList, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 interface Props {
     categories: string[];
-    onAdd: (name: string) => void;
+    onAdd: (name: string) => ActionResult;
     onDelete: (name: string) => void;
     onBack: () => void;
 }
@@ -37,7 +38,9 @@ export default function CategorySettings({ categories, onAdd, onDelete, onBack }
                     onChangeText={setNewCat}
                 />
                 <TouchableOpacity style={styles.addBtn} onPress={() => {
-                    if (newCat) { onAdd(newCat); setNewCat(''); }
+                    const result = onAdd(newCat);
+                    if (result.ok) setNewCat('');
+                    else Alert.alert('入力エラー', result.message);
                 }}>
                     <Text style={{ color: '#fff' }}>追加</Text>
                 </TouchableOpacity>

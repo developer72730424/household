@@ -12,13 +12,9 @@ import {
     View,
 } from 'react-native';
 
-export interface Template {
-    id: string;
-    name: string;
-    item: string;
-    amount: string;
-    category: string;
-}
+import { newEntryId, validateAmountInput, type Template } from '@/utils/entries';
+
+export type { Template };
 
 interface TemplatesProps {
     templates: Template[];
@@ -50,11 +46,16 @@ export default function Templates({
             Alert.alert('エラー', 'すべてのフィールドを入力してください');
             return;
         }
+        const amountCheck = validateAmountInput(templateAmount);
+        if (!amountCheck.ok) {
+            Alert.alert('エラー', amountCheck.message);
+            return;
+        }
         const newTemplate: Template = {
-            id: Date.now().toString(),
-            name: templateName,
-            item: templateItem,
-            amount: templateAmount,
+            id: newEntryId(),
+            name: templateName.trim(),
+            item: templateItem.trim(),
+            amount: String(amountCheck.value),
             category: templateCategory,
         };
         onAddTemplate(newTemplate);

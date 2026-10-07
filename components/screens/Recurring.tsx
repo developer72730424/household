@@ -2,7 +2,8 @@ import React, { useMemo, useState } from 'react';
 import { Alert, FlatList, Keyboard, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 import { AppColors, useAppColors } from '@/hooks/use-app-colors';
-import { initialLastGenerated, RecurringRule } from '@/utils/recurring';
+import { newEntryId, validateAmountInput } from '@/utils/entries';
+import { initialLastGenerated, type RecurringRule } from '@/utils/recurring';
 
 interface RecurringProps {
     rules: RecurringRule[];
@@ -20,29 +21,26 @@ export default function Recurring({ rules, categories, onAdd, onDelete, onBack }
     const [day, setDay] = useState('');
     const [category, setCategory] = useState(categories[0] ?? '食費');
 
-    const toHalfWidth = (s: string) =>
-        s.replace(/[０-９]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0)).replace(/[,，\s]/g, '');
-
     const handleAdd = () => {
-        const amountValue = Number(toHalfWidth(amount));
-        const dayValue = Number(toHalfWidth(day));
         if (!item.trim()) {
             Alert.alert('入力エラー', '品目を入力してください');
             return;
         }
-        if (!Number.isFinite(amountValue) || amountValue <= 0) {
-            Alert.alert('入力エラー', '金額は0より大きい数値で入力してください');
+        const amountCheck = validateAmountInput(amount);
+        if (!amountCheck.ok) {
+            Alert.alert('入力エラー', amountCheck.message);
             return;
         }
         // 29〜31日は存在しない月があるため 28日までに制限
+        const dayValue = Number(day.replace(/[０-９]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0)));
         if (!Number.isInteger(dayValue) || dayValue < 1 || dayValue > 28) {
             Alert.alert('入力エラー', '発生日は1〜28の整数で入力してください');
             return;
         }
         onAdd({
-            id: Date.now().toString(),
+            id: newEntryId(),
             item: item.trim(),
-            amount: String(amountValue),
+            amount: amountCheck.value,
             category,
             day: dayValue,
             lastGenerated: initialLastGenerated(dayValue),
@@ -60,7 +58,7 @@ export default function Recurring({ rules, categories, onAdd, onDelete, onBack }
         ]);
     };
 
-    const monthlyTotal = rules.reduce((sum, r) => sum + Number(r.amount), 0);
+    const monthlyTotal = rules.reduce((sum, r) => sum + r.amount, 0);
 
     return (
         <View style={styles.container}>
@@ -127,7 +125,7 @@ export default function Recurring({ rules, categories, onAdd, onDelete, onBack }
                             <Text style={styles.listItemTitle}>{rule.item}</Text>
                             <Text style={styles.listItemSub}>毎月{rule.day}日 | {rule.category}</Text>
                         </View>
-                        <Text style={styles.listItemAmount}>¥{Number(rule.amount).toLocaleString()}</Text>
+                        <Text style={styles.listItemAmount}>¥{rule.amount.toLocaleString()}</Text>
                         <TouchableOpacity onPress={() => confirmDelete(rule)} style={styles.deleteBtn}>
                             <Text style={{ color: c.danger }}>削除</Text>
                         </TouchableOpacity>

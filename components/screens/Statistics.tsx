@@ -1,252 +1,75 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { AppColors, useAppColors } from '@/hooks/use-app-colors';
+import React, { useMemo, useState } from 'react';
 import { Dimensions, FlatList, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { LineChart, PieChart } from 'react-native-chart-kit';
 
-interface HistoryItem {
-    id: string;
-    item: string;
-    amount: string;
-    category: string;
-    date: string;
-}
+import { AppColors, useAppColors } from '@/hooks/use-app-colors';
+import {
+    entriesInMonth, expenseByCategory, formatMonthJapanese, incomeBySource, monthKeyOf, monthlyTrend, shiftMonth,
+    summarize, type Entry,
+} from '@/utils/entries';
 
 interface StatisticsProps {
-    history: HistoryItem[];
-    categories: string[];
+    entries: Entry[];
     onBack: () => void;
 }
 
 const screenWidth = Dimensions.get('window').width;
+const CHART_COLORS = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF'];
 
-export default function Statistics({ history, categories, onBack }: StatisticsProps) {
+export default function Statistics({ entries, onBack }: StatisticsProps) {
     const c = useAppColors();
     const styles = useMemo(() => createStyles(c), [c]);
     const [selectedPeriod, setSelectedPeriod] = useState<'1month' | '3month' | '6month'>('1month');
-    const [monthlyData, setMonthlyData] = useState<{ month: string; income: number; expense: number }[]>([]);
-    const [categoryData, setCategoryData] = useState<{ name: string; amount: number; color: string }[]>([]);
-    const [incomeData, setIncomeData] = useState<{ name: string; amount: number; color: string }[]>([]);
-    const [statistics, setStatistics] = useState<{
-        totalAmount: number;
-        incomeTotal: number;
-        netBalance: number;
-        averageAmount: number;
-        maxCategoryName: string;
-        maxCategoryAmount: number;
-        maxIncomeName: string;
-        maxIncomeAmount: number;
-        transactionCount: number;
-    }>({ totalAmount: 0, incomeTotal: 0, netBalance: 0, averageAmount: 0, maxCategoryName: '', maxCategoryAmount: 0, maxIncomeName: '', maxIncomeAmount: 0, transactionCount: 0 });
-
     // 切り替え: 月別表示か全期間表示か
     const [showAllTime, setShowAllTime] = useState(false);
-
     // 月移動用（ホームと同じ操作感）
-    const [currentMonth, setCurrentMonth] = useState(new Date());
-    // displayYearMonth はゼロ埋めして "YYYY/MM" 形式にする
-    const displayYearMonth = useMemo(() => `${currentMonth.getFullYear()}/${('0' + (currentMonth.getMonth() + 1)).slice(-2)}`, [currentMonth]);
-    const displayMonthJapanese = useMemo(() => `${currentMonth.getFullYear()}年 ${currentMonth.getMonth() + 1}月`, [currentMonth]);
-    const goToPrevMonth = () => setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
-    const goToNextMonth = () => setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
+    const [currentMonth, setCurrentMonth] = useState(() => new Date());
+    const displayMonthJapanese = formatMonthJapanese(currentMonth);
+    const goToPrevMonth = () => setCurrentMonth(prev => shiftMonth(prev, -1));
+    const goToNextMonth = () => setCurrentMonth(prev => shiftMonth(prev, 1));
 
-    // 日付文字列を正規化して "YYYY/MM" 形式にするユーティリティ
-    const normalizeMonth = (dateStr?: string) => {
-        if (!dateStr) return '';
-        const s = String(dateStr);
-        const m = s.match(/(\d{4})[-\/](\d{1,2})/);
-        if (m) return `${m[1]}/${('0' + m[2]).slice(-2)}`;
-        const dt = new Date(s);
-        if (!isNaN(dt.getTime())) return `${dt.getFullYear()}/${('0' + (dt.getMonth() + 1)).slice(-2)}`;
-        return '';
-    };
+    // 集計の対象: 全期間 or 表示中の月
+    const scoped = useMemo(
+        () => (showAllTime ? entries : entriesInMonth(entries, monthKeyOf(currentMonth))),
+        [entries, showAllTime, currentMonth],
+    );
 
-    // 指定月の履歴（normalizeMonth を使って厳密に一致を見る）
-    const filteredHistory = useMemo(() => history.filter(item => normalizeMonth(item.date) === displayYearMonth), [history, displayYearMonth]);
+    // 月別推移: 表示中の月を終点に、直近 1・3・6 か月
+    const monthlyData = useMemo(() => {
+        const months = selectedPeriod === '1month' ? 1 : selectedPeriod === '3month' ? 3 : 6;
+        return monthlyTrend(entries, currentMonth, months).map(p => ({ ...p, month: p.month.replace('-', '/') }));
+    }, [entries, selectedPeriod, currentMonth]);
 
-    // 月別の集計（表示用）
-    const monthExpenseTotalsMap = useMemo(() => {
-        const map: Record<string, number> = {};
-        filteredHistory.forEach(entry => {
-            if (entry.category === '収入') return;
-            map[entry.category] = (map[entry.category] || 0) + Math.abs(Number(entry.amount) || 0);
-        });
-        return map;
-    }, [filteredHistory]);
-
-    const monthCategoryData = useMemo(() => {
-        const colors = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF'];
-        return Object.entries(monthExpenseTotalsMap).map(([name, amount], index) => ({
-            name,
-            amount,
-            color: colors[index % colors.length],
+    const categoryData = useMemo(
+        () => expenseByCategory(scoped).map((t, i) => ({
+            ...t,
+            color: CHART_COLORS[i % CHART_COLORS.length],
             legendFontColor: c.textSecondary,
             legendFontSize: 12,
-        })).filter(d => d.amount > 0).sort((a, b) => b.amount - a.amount);
-    }, [monthExpenseTotalsMap, c.textSecondary]);
-
-    const monthIncomeTotalsMap = useMemo(() => {
-        const map: Record<string, number> = {};
-        filteredHistory.forEach(entry => {
-            if (entry.category !== '収入') return;
-            const key = entry.item || 'その他';
-            map[key] = (map[key] || 0) + (Number(entry.amount) || 0);
-        });
-        return map;
-    }, [filteredHistory]);
-
-    const monthIncomeData = useMemo(() => {
-        const colors = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF'];
-        return Object.entries(monthIncomeTotalsMap).map(([name, amount], index) => ({
-            name,
-            amount,
-            color: colors[(index + 2) % colors.length],
+        })),
+        [scoped, c.textSecondary],
+    );
+    const incomeData = useMemo(
+        () => incomeBySource(scoped).map((t, i) => ({
+            ...t,
+            color: CHART_COLORS[(i + 2) % CHART_COLORS.length],
             legendFontColor: c.textSecondary,
             legendFontSize: 12,
-        })).filter(d => d.amount > 0).sort((a, b) => b.amount - a.amount);
-    }, [monthIncomeTotalsMap, c.textSecondary]);
+        })),
+        [scoped, c.textSecondary],
+    );
 
-    const monthTotalExpense = useMemo(() => Object.values(monthExpenseTotalsMap).reduce((s, v) => s + v, 0), [monthExpenseTotalsMap]);
-    const monthTotalIncome = useMemo(() => Object.values(monthIncomeTotalsMap).reduce((s, v) => s + v, 0), [monthIncomeTotalsMap]);
-
-    // ユーティリティ: 文字列の金額を安全に数値へ変換（カンマや余分な文字を取り除く）
-    const parseAmount = (val: string | number) => {
-        const s = String(val || '0');
-        // カンマや通貨記号など数字以外を取り除く
-        const cleaned = s.replace(/[,¥\s]/g, '').replace(/[^0-9.\-]/g, '');
-        const n = Number(cleaned);
-        return isNaN(n) ? 0 : n;
+    const summary = useMemo(() => summarize(scoped), [scoped]);
+    const statistics = {
+        totalAmount: summary.expense,
+        incomeTotal: summary.income,
+        netBalance: summary.balance,
+        transactionCount: summary.count,
+        maxCategoryName: categoryData[0]?.name ?? '-',
+        maxCategoryAmount: categoryData[0]?.amount ?? 0,
+        maxIncomeName: incomeData[0]?.name ?? '-',
+        maxIncomeAmount: incomeData[0]?.amount ?? 0,
     };
-
-    // 期間に応じた月数を取得
-    const getMonthsToDisplay = (period: string) => {
-        if (period === '1month') return 1;
-        if (period === '3month') return 3;
-        return 6;
-    };
-
-    // 指定年月のデータを集計は useEffect 内で直接計算します（getMonthData を外に残すと依存配列警告になるため）
-
-    // 統計データの計算
-    useEffect(() => {
-        const months = getMonthsToDisplay(selectedPeriod);
-        const today = new Date();
-        const monthly: { month: string; income: number; expense: number }[] = [];
-
-        // 月別データの生成
-        // 日付文字列のフォーマットはアプリ内で一貫しているとは限らない
-        // （"YYYY/MM"、"YYYY-MM-DD"、ISO 文字列など）があるため、
-        // 日付文字列を正規化して "YYYY/MM" 形式で比較する関数を使う
-        const normalizeMonth = (dateStr?: string) => {
-            if (!dateStr) return '';
-            const s = String(dateStr);
-            // まずは YYYY/MM や YYYY/M, YYYY-MM のような先頭部分を正規表現で抜き出す
-            const m = s.match(/(\d{4})[-\/](\d{1,2})/);
-            if (m) return `${m[1]}/${('0' + m[2]).slice(-2)}`;
-            // 最後に Date にパースして月を取得する（保険）
-            const dt = new Date(s);
-            if (!isNaN(dt.getTime())) return `${dt.getFullYear()}/${('0' + (dt.getMonth() + 1)).slice(-2)}`;
-            return '';
-        };
-
-        for (let i = months - 1; i >= 0; i--) {
-            const date = new Date(today.getFullYear(), today.getMonth() - i, 1);
-            const year = date.getFullYear();
-            const month = date.getMonth() + 1;
-            // 月ラベルはゼロ埋めした "YYYY/MM" 形式にする（横軸を現在の年月に合わせるため）
-            const monthLabel = `${year}/${('0' + month).slice(-2)}`;
-
-            // 正規化した日付が当該月と一致するアイテムを集計する
-            const monthItems = history.filter(item => normalizeMonth(item.date) === monthLabel);
-
-            const income = monthItems
-                .filter(it => it.category === '収入')
-                .reduce((sum, item) => sum + parseAmount(item.amount), 0);
-            const expense = monthItems
-                .filter(it => it.category !== '収入')
-                .reduce((sum, item) => sum + Math.abs(parseAmount(item.amount)), 0);
-
-            monthly.push({ month: monthLabel, income, expense });
-        }
-        setMonthlyData(monthly);
-
-        // カテゴリ別集計（"収入"カテゴリは支出集計から除外）
-        // showAllTime が true の場合は全期間、false の場合は currentMonth のデータのみを使う
-        const sourceForCategory = showAllTime ? history : filteredHistory;
-        const categoryTotals: { [key: string]: number } = {};
-        categories.forEach(cat => {
-            // カテゴリリストに万が一「収入」が含まれている場合はスキップ
-            if (cat === '収入') return;
-            // 支出はマイナスで保存されている場合があるため、絶対値で集計する
-            categoryTotals[cat] = sourceForCategory
-                .filter(item => item.category === cat)
-                .reduce((sum, item) => sum + Math.abs(parseAmount(item.amount)), 0);
-        });
-
-        const colors = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF'];
-        const catData = Object.entries(categoryTotals)
-            .map(([name, amount], index) => ({
-                name,
-                amount,
-                color: colors[index % colors.length],
-                legendFontColor: c.textSecondary,
-                legendFontSize: 12,
-            }))
-            .filter(d => d.amount > 0)
-            .sort((a, b) => b.amount - a.amount);
-
-        setCategoryData(catData);
-
-        // 収入の内訳（収入カテゴリのアイテム名ごとに集計）
-        const sourceForIncome = showAllTime ? history : filteredHistory;
-        const incomeTotals: { [key: string]: number } = {};
-        sourceForIncome
-            .filter(item => item.category === '収入')
-            .forEach(it => {
-                const key = it.item || 'その他';
-                incomeTotals[key] = (incomeTotals[key] || 0) + parseAmount(it.amount);
-            });
-
-        const incData = Object.entries(incomeTotals)
-            .map(([name, amount], index) => ({
-                name,
-                amount,
-                color: colors[(index + 2) % colors.length],
-                legendFontColor: c.textSecondary,
-                legendFontSize: 12,
-            }))
-            .filter(d => d.amount > 0)
-            .sort((a, b) => b.amount - a.amount);
-
-        setIncomeData(incData);
-
-        const maxIncome = incData[0] || { name: '-', amount: 0 };
-
-        // 統計情報の計算
-        // showAllTime が true の場合は全期間、false の場合は currentMonth のデータのみを使う
-        const sourceForStats = showAllTime ? history : filteredHistory;
-        // 総支出は支出が負数で保存されているケースを想定して絶対値で集計する
-        const totalAmount = sourceForStats
-            .filter(item => item.category !== '収入')
-            .reduce((sum, item) => sum + Math.abs(parseAmount(item.amount)), 0);
-        const incomeTotal = sourceForStats
-            .filter(item => item.category === '収入')
-            .reduce((sum, item) => sum + parseAmount(item.amount), 0);
-        const netBalance = incomeTotal - totalAmount; // 収入 - 支出
-        const avgAmount = sourceForStats.length > 0 ? Math.round(totalAmount / sourceForStats.length) : 0;
-        const maxCategory = catData[0] || { name: '-', amount: 0 };
-
-        setStatistics({
-            totalAmount,
-            incomeTotal,
-            netBalance,
-            averageAmount: avgAmount,
-            maxCategoryName: maxCategory.name,
-            maxCategoryAmount: maxCategory.amount,
-            maxIncomeName: maxIncome.name,
-            maxIncomeAmount: maxIncome.amount,
-            transactionCount: sourceForStats.length,
-        });
-    }, [history, selectedPeriod, categories, showAllTime, filteredHistory, c.textSecondary]);
 
     // 月別推移データ（収入・支出を別線で表示するための LineChart 用データ）
     const lineChartData = {
@@ -542,7 +365,7 @@ export default function Statistics({ history, categories, onBack }: StatisticsPr
                 )}
 
                 {/* データがない場合 */}
-                {history.length === 0 && (
+                {entries.length === 0 && (
                     <View style={styles.emptyContainer}>
                         <Text style={styles.emptyText}>収入・支出のデータがまだ登録されていません</Text>
                     </View>

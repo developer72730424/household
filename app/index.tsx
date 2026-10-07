@@ -1,540 +1,101 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { AppColors, useAppColors } from '@/hooks/use-app-colors';
-import DateTimePicker from '@react-native-community/datetimepicker';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Dimensions, FlatList, Keyboard, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useRouter, type Href } from 'expo-router';
+import React, { useMemo, useState } from 'react';
+import { Alert, Dimensions, FlatList, Modal, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { PieChart } from 'react-native-chart-kit';
-import CategorySettings from './(pages)/CategorySettings';
-import BudgetCard from '@/components/budget-card';
-import { generateDueEntries, RecurringRule } from '@/utils/recurring';
-import Export from './(pages)/Export';
-import InputIncome from './(pages)/InputIncome';
-import InputItem from './(pages)/InputItem';
-import Recurring from './(pages)/Recurring';
-import SearchFilter from './(pages)/SearchFilter';
-import Statistics from './(pages)/Statistics';
-import Templates, { Template } from './(pages)/Templates';
 
-export const options = {
-  title: 'シンプル家計簿',
-  headerShown: false,
-};
+import BackupBanner from '@/components/backup-banner';
+import BudgetCard from '@/components/budget-card';
+import { useAppData } from '@/context/app-data';
+import { AppColors, useAppColors } from '@/hooks/use-app-colors';
+import { shouldRemindBackup } from '@/utils/backup';
+import {
+    entriesInMonth, expenseByCategory, formatDisplayDate, formatMonthJapanese, monthKeyOf, shiftMonth, sortEntries,
+    summarize,
+} from '@/utils/entries';
 
 const screenWidth = Dimensions.get('window').width;
+const CHART_COLORS = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF'];
 
-const STORAGE_KEY = '@expense_history';
+// ホームの「メニュー」から開く画面。よく使う入力（支出・収入）は右下の＋ボタンにある
+const MENU_ITEMS: { label: string; icon: string; color: string; href: Href }[] = [
+    { label: '収支統計', icon: '📊', color: '#34C759', href: '/statistics' },
+    { label: '検索・フィルター', icon: '🔍', color: '#FF9500', href: '/search' },
+    { label: '固定費', icon: '🔁', color: '#AF52DE', href: '/recurring' },
+    { label: 'テンプレート', icon: '📋', color: '#FF9500', href: '/templates' },
+    { label: 'カテゴリ設定', icon: '⚙️', color: '#5856D6', href: '/categories' },
+    { label: 'データ管理・バックアップ', icon: '💾', color: '#00C7BE', href: '/export' },
+];
 
-// 1つ1つのデータの形を定義します
-interface HistoryItem {
-    id: string;
-    item: string;
-    amount: string;
-    category: string;
-    date: string;
-}
-
-export default function App() {
+export default function HomeScreen() {
     const c = useAppColors();
     const styles = useMemo(() => createStyles(c), [c]);
-    // 状態（State）の定義：入力内容と履歴リストを管理します
-    const [item, setItem] = useState('');      // 品目
-    const [amount, setAmount] = useState('');  // 金額
-    const [history, setHistory] = useState<HistoryItem[]>([]); // 履歴の配列
-    const [selectedCategory, setSelectedCategory] = useState('食費');
-    const [date, setDate] = useState(new Date()); // 選択された日付オブジェクト
-    const [showPicker, setShowPicker] = useState(false); // カレンダーを表示するかどうか
-    const [currentMonth, setCurrentMonth] = useState(new Date()); // 表示中の年月
-    const [currentScreen, setCurrentScreen] = useState<'history' | 'add' | 'income' | 'settings' | 'statistics' | 'search' | 'export' | 'templates' | 'recurring'>('history');
-    const [categories, setCategories] = useState<string[]>(['食費', '日用品', 'その他']); // 初期値
-    const CATEGORY_STORAGE_KEY = '@app_categories'; // 保存用のキー
+    const router = useRouter();
+    const { entries, budget, setBudget, deleteEntry, lastBackupAt, backupSnoozeUntil, snoozeBackup } = useAppData();
+    const [currentMonth, setCurrentMonth] = useState(() => new Date());
+    const [isFabOpen, setIsFabOpen] = useState(false);
     const [isMenuOpen, setIsMenuOpen] = useState(false);
-    // 編集機能用の状態
-    const [editingId, setEditingId] = useState<string | null>(null);
-    const [isEditMode, setIsEditMode] = useState(false);
-    // テンプレート機能用の状態
-    const [templates, setTemplates] = useState<Template[]>([]);
-    const TEMPLATES_STORAGE_KEY = '@app_templates';
 
-    // 単一ユーザー（"Default"）前提のストレージキー
-    // 既存データ互換のため、"_Default" 接尾辞付きのキーをそのまま利用します
-    const getHistoryKey = () => `${STORAGE_KEY}_Default`;
-    const getCategoryKey = () => `${CATEGORY_STORAGE_KEY}_Default`;
-    const getTemplatesKey = () => `${TEMPLATES_STORAGE_KEY}_Default`;
-    const getBudgetKey = () => '@app_budget_Default';
-    const getRecurringKey = () => '@app_recurring_Default';
-
-    // 月間予算（全月共通、未設定は null）
-    const [budget, setBudget] = useState<number | null>(null);
-    // 固定費ルール
-    const [recurringRules, setRecurringRules] = useState<RecurringRule[]>([]);
-
-
-    // 2. 起動時にカテゴリを読み込む（単一ユーザー）
-    useEffect(() => {
-        const loadCategories = async () => {
-            const savedCats = await AsyncStorage.getItem(getCategoryKey());
-            if (savedCats) setCategories(JSON.parse(savedCats));
-            else setCategories(['食費', '日用品', 'その他']);
-        };
-        loadCategories();
-    }, []);
-
-    // テンプレート読み込み（単一ユーザー）
-    useEffect(() => {
-        const loadTemplates = async () => {
-            try {
-                const savedTemplates = await AsyncStorage.getItem(getTemplatesKey());
-                if (savedTemplates) setTemplates(JSON.parse(savedTemplates));
-                else setTemplates([]);
-            } catch (e) {
-                console.error('テンプレート読み込み失敗', e);
-            }
-        };
-        loadTemplates();
-    }, []);
-
-    // テンプレート / カテゴリ関連の処理は下でメモ化した関数を使用します
-
-    // --- 追加：アプリ起動時にデータを読み込む ---
-    // 固定費の自動登録は履歴の読み込みと同時に行う（読み込み前の空配列で上書きしないため）
-    useEffect(() => {
-        const loadData = async () => {
-            try {
-                const [jsonValue, rulesJson, budgetValue] = await Promise.all([
-                    AsyncStorage.getItem(getHistoryKey()),
-                    AsyncStorage.getItem(getRecurringKey()),
-                    AsyncStorage.getItem(getBudgetKey()),
-                ]);
-                let loadedHistory: HistoryItem[] = jsonValue !== null ? JSON.parse(jsonValue) : [];
-                let rules: RecurringRule[] = rulesJson !== null ? JSON.parse(rulesJson) : [];
-
-                const { entries, updatedRules, changed } = generateDueEntries(rules);
-                if (changed) {
-                    loadedHistory = [...entries.reverse(), ...loadedHistory];
-                    rules = updatedRules;
-                    await Promise.all([
-                        AsyncStorage.setItem(getHistoryKey(), JSON.stringify(loadedHistory)),
-                        AsyncStorage.setItem(getRecurringKey(), JSON.stringify(rules)),
-                    ]);
-                }
-                setHistory(loadedHistory);
-                setRecurringRules(rules);
-                if (budgetValue !== null) setBudget(Number(budgetValue));
-            } catch (e) {
-                console.error('読み込み失敗', e);
-            }
-        };
-        loadData();
-    }, []);
-
-    const changeBudget = useCallback(async (value: number | null) => {
-        setBudget(value);
-        if (value === null) await AsyncStorage.removeItem(getBudgetKey());
-        else await AsyncStorage.setItem(getBudgetKey(), String(value));
-    }, []);
-
-    const addRecurringRule = useCallback(async (rule: RecurringRule) => {
-        const updated = [...recurringRules, rule];
-        setRecurringRules(updated);
-        await AsyncStorage.setItem(getRecurringKey(), JSON.stringify(updated));
-    }, [recurringRules]);
-
-    const deleteRecurringRule = useCallback(async (id: string) => {
-        const updated = recurringRules.filter(r => r.id !== id);
-        setRecurringRules(updated);
-        await AsyncStorage.setItem(getRecurringKey(), JSON.stringify(updated));
-    }, [recurringRules]);
-
-    // --- 追加：データを保存する関数 ---
-    const saveData = useCallback(async (data: HistoryItem[]) => {
-        try {
-            const jsonValue = JSON.stringify(data);
-            await AsyncStorage.setItem(getHistoryKey(), jsonValue);
-        } catch (e) {
-            console.error('保存失敗', e);
-        }
-    }, []);
-
-    // 1. 表示中の年月を「YYYY/M」の形式にする（例: 2026/1）
-    const displayYearMonth = `${currentMonth.getFullYear()}/${currentMonth.getMonth() + 1}`;
-
-    // 日本語の月表示（ホーム画面用）
-    const displayMonthJapanese = useMemo(() => `${currentMonth.getFullYear()}年 ${currentMonth.getMonth() + 1}月`, [currentMonth]);
-
-    // 前月 / 次月 移動
-    const goToPrevMonth = useCallback(() => {
-        setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
-    }, []);
-
-    const goToNextMonth = useCallback(() => {
-        setCurrentMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
-    }, []);
-
-    // 当月の合計支出を計算 （filteredHistory 宣言後に移動）
-
-    // 月名を日本語で取得する関数
-    // getMonthName は未使用のため削除
-
-    // displayMonthJapanese は未使用のため削除
-
-    // 2. 履歴の中から、日付が一致するものだけを取り出す（メモ化）
-    const filteredHistory = useMemo(() => {
-        // "2026/1" が "2026/10" にも前方一致しないよう、末尾に "/" を付けて比較する
-        return history.filter(item => item.date?.startsWith(`${displayYearMonth}/`));
-    }, [history, displayYearMonth]);
-
-    // 当月の収支を計算（収入 - 支出）
-    const { monthlyIncome, monthlyExpense } = useMemo(() => {
-        const income = filteredHistory
-            .filter(it => it.category === '収入')
-            .reduce((sum, it) => sum + Number(it.amount), 0);
-        const expense = filteredHistory
-            .filter(it => it.category !== '収入')
-            .reduce((sum, it) => sum + Number(it.amount), 0);
-        return { monthlyIncome: income, monthlyExpense: expense };
-    }, [filteredHistory]);
-    const monthlyTotal = monthlyIncome - monthlyExpense;
-
-    // delete/startEdit/update は下でメモ化した関数を使用します
-
-    // 編集をキャンセルする関数（未使用のため削除）
-
-    const onDateChange = (_event: any, selectedDate?: Date) => {
-        setShowPicker(Platform.OS === 'ios'); // iOSは出しっぱなし、Androidは選択後閉じる
-        if (selectedDate) setDate(selectedDate);
-    };
-
-    // 日付を文字列に変換する便利な関数
-    const formatDate = (d: Date) => {
-        return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
-    };
-
-    // フィルタ済み履歴から支出（収入以外）をカテゴリ別に集計する（グラフ用）
-    const expenseCategoryTotals = useMemo(() => {
-        const map: Record<string, number> = {};
-        filteredHistory.forEach(entry => {
-            if (entry.category === '収入') return; // 収入は除外
-            map[entry.category] = (map[entry.category] || 0) + Number(entry.amount);
-        });
-        return map;
-    }, [filteredHistory]);
-
-    const chartData = useMemo(() => {
-        const colors = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF'];
-        return Object.keys(expenseCategoryTotals).map((cat, index) => ({
-            name: cat,
-            amount: expenseCategoryTotals[cat] || 0,
-            color: colors[index % colors.length],
+    const monthEntries = useMemo(
+        () => sortEntries(entriesInMonth(entries, monthKeyOf(currentMonth))),
+        [entries, currentMonth],
+    );
+    const { income: monthlyIncome, expense: monthlyExpense, balance: monthlyTotal } = useMemo(
+        () => summarize(monthEntries),
+        [monthEntries],
+    );
+    const chartData = useMemo(
+        () => expenseByCategory(monthEntries).map((t, i) => ({
+            name: t.name,
+            amount: t.amount,
+            color: CHART_COLORS[i % CHART_COLORS.length],
             legendFontColor: c.textSecondary,
             legendFontSize: 12,
-        })).filter(d => d.amount > 0);
-    }, [expenseCategoryTotals, c.textSecondary]);
+        })),
+        [monthEntries, c.textSecondary],
+    );
 
-    // カテゴリ削除用の関数
-    const deleteCategory = useCallback(async (targetCat: string) => {
-        const updatedCats = categories.filter(cat => cat !== targetCat);
-        setCategories(updatedCats);
-        await AsyncStorage.setItem(getCategoryKey(), JSON.stringify(updatedCats));
-    }, [categories]);
+    const showBackupBanner = shouldRemindBackup({
+        now: new Date(),
+        lastBackupAt,
+        snoozeUntil: backupSnoozeUntil,
+        entryCount: entries.length,
+    });
 
-    // 他よく使うコールバックをメモ化して子コンポーネント再レンダリングを抑える
-    const addCategory = useCallback(async (newCat: string) => {
-        if (!newCat || categories.includes(newCat)) return;
-        const updatedCats = [...categories, newCat];
-        setCategories(updatedCats);
-        await AsyncStorage.setItem(getCategoryKey(), JSON.stringify(updatedCats));
-    }, [categories]);
+    const openInput = (path: '/add' | '/income') => {
+        setIsFabOpen(false);
+        router.push(path);
+    };
 
-    const addTemplate = useCallback(async (template: Template) => {
-        const updatedTemplates = [...templates, template];
-        setTemplates(updatedTemplates);
-        await AsyncStorage.setItem(getTemplatesKey(), JSON.stringify(updatedTemplates));
-    }, [templates]);
-
-    const deleteTemplate = useCallback(async (id: string) => {
-        const updatedTemplates = templates.filter(t => t.id !== id);
-        setTemplates(updatedTemplates);
-        await AsyncStorage.setItem(getTemplatesKey(), JSON.stringify(updatedTemplates));
-    }, [templates]);
-
-    const selectTemplate = useCallback((template: Template) => {
-        setItem(template.item);
-        setAmount(template.amount);
-        setSelectedCategory(template.category);
-        setCurrentScreen('add');
-    }, []);
-
-    // 入力フォームを初期状態に戻す（キャンセル・保存後・新規入力開始時）
-    const resetForm = useCallback(() => {
-        setItem('');
-        setAmount('');
-        setSelectedCategory(categories[0] ?? '食費');
-        setDate(new Date());
-        setEditingId(null);
-        setIsEditMode(false);
-        Keyboard.dismiss();
-    }, [categories]);
-
-    // 入力値を検証し、正規化した金額を返す。不正な場合はアラートを出して null を返す
-    const validateInput = useCallback((): string | null => {
-        if (item.trim() === '') {
-            Alert.alert('入力エラー', '品目を入力してください');
-            return null;
-        }
-        // 全角数字・カンマを許容する
-        const normalized = amount
-            .replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
-            .replace(/[,，\s]/g, '');
-        const value = Number(normalized);
-        if (normalized === '' || !Number.isFinite(value) || value <= 0) {
-            Alert.alert('入力エラー', '金額は0より大きい数値で入力してください');
-            return null;
-        }
-        return String(value);
-    }, [item, amount]);
-
-    const addEntryWithCategory = useCallback((category: string): boolean => {
-        const validAmount = validateInput();
-        if (validAmount === null) return false;
-
-        const newEntry: HistoryItem = {
-            id: Date.now().toString(),
-            item: item.trim(),
-            amount: validAmount,
-            category,
-            date: formatDate(date),
-        };
-
-        const newHistory = [newEntry, ...history];
-        setHistory(newHistory);
-        saveData(newHistory);
-        resetForm();
-        return true;
-    }, [item, date, history, saveData, validateInput, resetForm]);
-
-    const addEntry = useCallback(() => addEntryWithCategory(selectedCategory), [addEntryWithCategory, selectedCategory]);
-    const addIncome = useCallback(() => addEntryWithCategory('収入'), [addEntryWithCategory]);
-
-    const deleteEntry = useCallback((id: string) => {
-        const newHistory = history.filter((item) => item.id !== id);
-        setHistory(newHistory);
-        void saveData(newHistory);
-    }, [history, saveData]);
-    
-
-    const startEditEntry = useCallback((entry: HistoryItem) => {
-        setEditingId(entry.id);
-        setItem(entry.item);
-        setAmount(entry.amount);
-        setSelectedCategory(entry.category);
-        const [year, month, day] = entry.date.split('/').map(Number);
-        setDate(new Date(year, month - 1, day));
-        setIsEditMode(true);
-        // 収入は収入入力画面で編集する（支出画面だとカテゴリが支出に変わってしまうため）
-        setCurrentScreen(entry.category === '収入' ? 'income' : 'add');
-    }, []);
-
-    const updateEntry = useCallback((): boolean => {
-        if (!editingId) return false;
-        const validAmount = validateInput();
-        if (validAmount === null) return false;
-
-        const updatedHistory = history.map((histItem) =>
-            histItem.id === editingId
-                ? {
-                    ...histItem,
-                    item: item.trim(),
-                    amount: validAmount,
-                    category: selectedCategory,
-                    date: formatDate(date),
-                }
-                : histItem
-        );
-
-        setHistory(updatedHistory);
-        saveData(updatedHistory);
-        resetForm();
-        return true;
-    }, [item, editingId, selectedCategory, date, history, saveData, validateInput, resetForm]);
-
-    const resetHistory = useCallback(async () => {
-        await AsyncStorage.removeItem(getHistoryKey());
-        setHistory([]);
-    }, []);
-
-    // JSONバックアップから履歴とカテゴリを復元（既存データは置き換え）
-    const restoreBackup = useCallback(async (restoredHistory: HistoryItem[], restoredCategories: string[]) => {
-        await Promise.all([
-            AsyncStorage.setItem(getHistoryKey(), JSON.stringify(restoredHistory)),
-            AsyncStorage.setItem(getCategoryKey(), JSON.stringify(restoredCategories)),
-        ]);
-        setHistory(restoredHistory);
-        setCategories(restoredCategories);
-    }, []);
-
-    const closeInput = useCallback(() => {
-        resetForm();
-        setCurrentScreen('history');
-    }, [resetForm]);
-
-    const openInput = useCallback((screen: 'add' | 'income') => {
-        resetForm();
-        setCurrentScreen(screen);
+    const openMenuItem = (href: Href) => {
         setIsMenuOpen(false);
-    }, [resetForm]);
+        router.push(href);
+    };
 
-    // FAB 用の旧処理は不要になったため削除
-
-    if (currentScreen === 'add') {
-        // Input screen needs to show the native DateTimePicker when requested.
-        // Previously the picker was only rendered in the main screen return path,
-        // so opening the picker from the input screen had no visible effect.
-        // Render the InputItem and the DateTimePicker together here so
-        // onShowPicker (which sets showPicker) actually displays the picker.
-        return (
-            <>
-                <InputItem
-                    item={item}
-                    setItem={setItem}
-                    amount={amount}
-                    setAmount={setAmount}
-                    selectedCategory={selectedCategory}
-                    setSelectedCategory={setSelectedCategory}
-                    categories={categories}
-                    onAddCategory={addCategory}
-                    onSave={() => {
-                        if (addEntry()) setCurrentScreen('history');
-                    }}
-                    onCancel={closeInput}
-                    onSelectDate={(d: Date) => setDate(d)}
-                    dateText={formatDate(date)}
-                    isEditMode={isEditMode}
-                    onUpdate={() => {
-                        if (updateEntry()) setCurrentScreen('history');
-                    }}
-                    templates={templates}
-                    onSelectTemplate={selectTemplate}
-                />
-
-                {showPicker && (
-                    <DateTimePicker value={date} mode="date" display="default" onChange={onDateChange} />
-                )}
-            </>
-        );
-    }
-    if (currentScreen === 'income') {
-        return (
-            <>
-                <InputIncome
-                    item={item}
-                    setItem={setItem}
-                    amount={amount}
-                    setAmount={setAmount}
-                    onSave={() => {
-                        if (addIncome()) setCurrentScreen('history');
-                    }}
-                    onCancel={closeInput}
-                    onSelectDate={(d: Date) => setDate(d)}
-                    dateText={formatDate(date)}
-                    isEditMode={isEditMode}
-                    onUpdate={() => {
-                        if (updateEntry()) setCurrentScreen('history');
-                    }}
-                />
-
-                {showPicker && (
-                    <DateTimePicker value={date} mode="date" display="default" onChange={onDateChange} />
-                )}
-            </>
-        );
-    }
-    if (currentScreen === 'settings') {
-        return (
-            <CategorySettings
-                categories={categories}
-                onAdd={addCategory}
-                onDelete={deleteCategory}
-                onBack={() => setCurrentScreen('history')}
-            />
-        );
-    }
-    if (currentScreen === 'templates') {
-        return (
-            <Templates
-                templates={templates}
-                onAddTemplate={addTemplate}
-                onDeleteTemplate={deleteTemplate}
-                onSelectTemplate={selectTemplate}
-                categories={categories}
-                onBack={() => setCurrentScreen('history')}
-            />
-        );
-    }
-
-
-    if (currentScreen === 'statistics') {
-        return (
-            <Statistics
-                history={history}
-                categories={categories}
-                onBack={() => setCurrentScreen('history')}
-            />
-        );
-    }
-    if (currentScreen === 'recurring') {
-        return (
-            <Recurring
-                rules={recurringRules}
-                categories={categories}
-                onAdd={addRecurringRule}
-                onDelete={deleteRecurringRule}
-                onBack={() => setCurrentScreen('history')}
-            />
-        );
-    }
-    if (currentScreen === 'search') {
-        return (
-            <SearchFilter
-                history={history}
-                categories={categories}
-                onBack={() => setCurrentScreen('history')}
-            />
-        );
-    }
-    if (currentScreen === 'export') {
-        return (
-            <Export
-                history={history}
-                categories={categories}
-                onBack={() => setCurrentScreen('history')}
-                onResetData={resetHistory}
-                onRestore={restoreBackup}
-            />
-        );
-    }
-
-  return (
+    return (
         <View style={styles.container}>
-
-            {/* シンプルな年月表示を追加（ホーム画面上部） */}
+            {/* 年月 */}
             <View style={styles.monthNav}>
-                <TouchableOpacity onPress={goToPrevMonth} style={styles.monthNavButton}>
+                <TouchableOpacity onPress={() => setCurrentMonth(prev => shiftMonth(prev, -1))} style={styles.monthNavButton} accessibilityLabel="前の月">
                     <Text style={styles.monthNavBtnText}>‹</Text>
                 </TouchableOpacity>
 
                 <View style={styles.monthDisplayContainer}>
-                    <Text style={styles.monthText}>{displayMonthJapanese}</Text>
+                    <Text style={styles.monthText}>{formatMonthJapanese(currentMonth)}</Text>
                 </View>
 
-                <TouchableOpacity onPress={goToNextMonth} style={styles.monthNavButton}>
+                <TouchableOpacity onPress={() => setCurrentMonth(prev => shiftMonth(prev, 1))} style={styles.monthNavButton} accessibilityLabel="次の月">
                     <Text style={styles.monthNavBtnText}>›</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.menuPill} onPress={() => setIsMenuOpen(true)} accessibilityLabel="メニューを開く">
+                    <Text style={styles.menuPillText}>☰</Text>
                 </TouchableOpacity>
             </View>
 
-            {/* 総支出を目立たせて中央に表示するカード */}
+            {/* 今月の収支 */}
             <View style={styles.monthlyTotalCard}>
                 <Text style={styles.monthlyTotalLabel}>今月の収支</Text>
-                <Text style={[styles.monthlyTotalAmount, monthlyTotal < 0 && { color: '#FF3B30' }]}>
+                <Text style={[styles.monthlyTotalAmount, monthlyTotal < 0 && { color: c.danger }]}>
                     {monthlyTotal < 0 ? '-' : ''}¥{Math.abs(monthlyTotal).toLocaleString()}
                 </Text>
                 <Text style={styles.monthlyBreakdown}>
@@ -542,11 +103,19 @@ export default function App() {
                 </Text>
             </View>
 
-            <BudgetCard budget={budget} spent={monthlyExpense} onChangeBudget={changeBudget} />
+            <BudgetCard budget={budget} spent={monthlyExpense} onChangeBudget={setBudget} />
 
-            {/* 2. メインエリア：グラフと履歴リスト */}
+            {showBackupBanner && (
+                <BackupBanner
+                    hasBackedUpBefore={lastBackupAt !== null}
+                    onBackup={() => router.push('/export')}
+                    onLater={snoozeBackup}
+                />
+            )}
+
+            {/* グラフと履歴リスト */}
             <FlatList
-                data={filteredHistory}
+                data={monthEntries}
                 keyExtractor={(item) => item.id}
                 style={{ flex: 1 }}
                 ListHeaderComponent={
@@ -558,13 +127,13 @@ export default function App() {
                                     data={chartData}
                                     width={screenWidth - 120}
                                     height={160}
-                                    chartConfig={{ 
+                                    chartConfig={{
                                         color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
                                         backgroundColor: c.card,
                                     }}
-                                    accessor={"amount"}
-                                    backgroundColor={"transparent"}
-                                    paddingLeft={"15"}
+                                    accessor={'amount'}
+                                    backgroundColor={'transparent'}
+                                    paddingLeft={'15'}
                                     absolute
                                 />
                             </View>
@@ -640,7 +209,7 @@ export default function App() {
 
                             <TouchableOpacity 
                                 style={styles.emptyStateCTA}
-                                onPress={() => openInput('add')}
+                                onPress={() => router.push('/add')}
                             >
                                 <Text style={styles.emptyStateCTAText}>✍️ さっそく入力する</Text>
                             </TouchableOpacity>
@@ -648,144 +217,80 @@ export default function App() {
                     </View>
                 }
                 renderItem={({ item }) => {
-                    const isIncome = item.category === '収入';
+                    const isIncome = item.type === 'income';
                     return (
                         <TouchableOpacity
                             style={[styles.listItem, { borderLeftColor: isIncome ? '#34C759' : '#5B4FA3' }]}
-                            onPress={() => startEditEntry(item)}
+                            onPress={() => router.push({ pathname: isIncome ? '/income' : '/add', params: { id: item.id } })}
                             onLongPress={() => {
                                 Alert.alert('削除', `${item.item}を削除しますか？`, [
                                     { text: 'キャンセル', style: 'cancel' },
-                                    { text: '削除', style: 'destructive', onPress: () => deleteEntry(item.id) }
+                                    { text: '削除', style: 'destructive', onPress: () => deleteEntry(item.id) },
                                 ]);
                             }}
                         >
-                            <View>
+                            <View style={{ flexShrink: 1 }}>
                                 <Text style={styles.listItemText}>{item.item}</Text>
-                                <Text style={{ fontSize: 12, color: c.textSecondary }}>{item.category} | {item.date}</Text>
+                                <Text style={{ fontSize: 12, color: c.textSecondary }}>{item.category} | {formatDisplayDate(item.date)}</Text>
                             </View>
                             <View style={{ alignItems: 'flex-end' }}>
-                                <Text style={[styles.listItemAmount, isIncome && { color: '#34C759' }]}>{isIncome ? `¥${Number(item.amount).toLocaleString()}` : `¥${Number(item.amount).toLocaleString()}`}</Text>
+                                <Text style={[styles.listItemAmount, isIncome && { color: '#34C759' }]}>
+                                    {isIncome ? '+' : ''}¥{item.amount.toLocaleString()}
+                                </Text>
                                 <Text style={{ fontSize: 10, color: c.textMuted }}>タップで編集・長押しで削除</Text>
                             </View>
                         </TouchableOpacity>
                     );
                 }}
+                // 右下の＋ボタンに最後の行が隠れないよう、末尾に余白を足す
+                ListFooterComponent={<View style={{ height: 110 }} />}
             />
 
-            {/* --- ★ ここから追加：メニューが開いている時の背景オーバーレイ --- */}
-            {isMenuOpen && (
-                <TouchableOpacity
-                    style={styles.overlay}
-                    activeOpacity={1}
-                    onPress={() => setIsMenuOpen(false)}
-                />
+            {/* ＋ボタン: 開いている間は背景を暗くして、支出・収入の入力を選べる */}
+            {isFabOpen && (
+                <TouchableOpacity style={styles.overlay} activeOpacity={1} onPress={() => setIsFabOpen(false)} />
             )}
-
-            {/* --- ★ ここから追加：浮き出るメニュー項目 --- */}
-            {isMenuOpen && (
+            {isFabOpen && (
                 <View style={styles.fabMenuContainer}>
-                    {/* データ管理ボタン */}
-                    <TouchableOpacity
-                        style={styles.menuItem}
-                        onPress={() => { setCurrentScreen('export'); setIsMenuOpen(false); }}
-                    >
-                        <Text style={styles.menuLabel}>データ管理</Text>
-                        <View style={[styles.miniCircle, { backgroundColor: '#00C7BE' }]}>
-                            <Text style={{ color: '#fff' }}>💾</Text>
-                        </View>
-                    </TouchableOpacity>
-
-                    {/* 固定費ボタン */}
-                    <TouchableOpacity
-                        style={styles.menuItem}
-                        onPress={() => { setCurrentScreen('recurring'); setIsMenuOpen(false); }}
-                    >
-                        <Text style={styles.menuLabel}>固定費</Text>
-                        <View style={[styles.miniCircle, { backgroundColor: '#AF52DE' }]}>
-                            <Text style={{ color: '#fff' }}>🔁</Text>
-                        </View>
-                    </TouchableOpacity>
-
-                    {/* テンプレート管理ボタン */}
-                    <TouchableOpacity
-                        style={styles.menuItem}
-                        onPress={() => { setCurrentScreen('templates'); setIsMenuOpen(false); }}
-                    >
-                        <Text style={styles.menuLabel}>テンプレート</Text>
-                        <View style={[styles.miniCircle, { backgroundColor: '#FF9500' }]}>
-                            <Text style={{ color: '#fff' }}>📋</Text>
-                        </View>
-                    </TouchableOpacity>
-
-                    {/* 検索ボタン */}
-                    <TouchableOpacity
-                        style={styles.menuItem}
-                        onPress={() => { setCurrentScreen('search'); setIsMenuOpen(false); }}
-                    >
-                        <Text style={styles.menuLabel}>検索・フィルター</Text>
-                        <View style={[styles.miniCircle, { backgroundColor: '#FF9500' }]}>
-                            <Text style={{ color: '#fff' }}>🔍</Text>
-                        </View>
-                    </TouchableOpacity>
-
-                    {/* 統計画面ボタン */}
-                    <TouchableOpacity
-                        style={styles.menuItem}
-                        onPress={() => { setCurrentScreen('statistics'); setIsMenuOpen(false); }}
-                    >
-                        <Text style={styles.menuLabel}>収支統計</Text>
-                        <View style={[styles.miniCircle, { backgroundColor: '#34C759' }]}>
-                            <Text style={{ color: '#fff' }}>📊</Text>
-                        </View>
-                    </TouchableOpacity>
-
-                    {/* カテゴリ設定ボタン */}
-                    <TouchableOpacity
-                        style={styles.menuItem}
-                        onPress={() => { setCurrentScreen('settings'); setIsMenuOpen(false); }}
-                    >
-                        <Text style={styles.menuLabel}>カテゴリ設定</Text>
-                        <View style={[styles.miniCircle, { backgroundColor: '#5856D6' }]}>
-                            <Text style={{ color: '#fff' }}>⚙️</Text>
-                        </View>
-                    </TouchableOpacity>
-
-                    {/* 支出入力ボタン */}
-                    <TouchableOpacity
-                        style={styles.menuItem}
-                        onPress={() => openInput('add')}
-                    >
-                        <Text style={styles.menuLabel}>支出を入力</Text>
-                        <View style={[styles.miniCircle, { backgroundColor: '#FF2D55' }]}>
-                            <Text style={{ color: '#fff' }}>✍️</Text>
-                        </View>
-                    </TouchableOpacity>
-
-                    {/* 収入入力ボタン */}
-                    <TouchableOpacity
-                        style={styles.menuItem}
-                        onPress={() => openInput('income')}
-                    >
+                    <TouchableOpacity style={styles.menuItem} onPress={() => openInput('/income')}>
                         <Text style={styles.menuLabel}>収入を入力</Text>
                         <View style={[styles.miniCircle, { backgroundColor: '#34C759' }]}>
                             <Text style={{ color: '#fff' }}>💴</Text>
                         </View>
                     </TouchableOpacity>
+                    <TouchableOpacity style={styles.menuItem} onPress={() => openInput('/add')}>
+                        <Text style={styles.menuLabel}>支出を入力</Text>
+                        <View style={[styles.miniCircle, { backgroundColor: '#FF2D55' }]}>
+                            <Text style={{ color: '#fff' }}>✍️</Text>
+                        </View>
+                    </TouchableOpacity>
                 </View>
             )}
-
-            {/* --- ★ 修正：プラスボタンの動作を Alert から メニュー開閉に変更 --- */}
             <TouchableOpacity
-                style={[styles.floatingButton, isMenuOpen && styles.floatingButtonOpen]}
-                onPress={() => setIsMenuOpen(!isMenuOpen)}
+                style={[styles.floatingButton, isFabOpen && styles.floatingButtonOpen]}
+                onPress={() => setIsFabOpen(!isFabOpen)}
+                accessibilityLabel={isFabOpen ? '閉じる' : '支出・収入を入力'}
             >
-                <Text style={styles.floatingButtonText}>{isMenuOpen ? '×' : '＋'}</Text>
+                <Text style={styles.floatingButtonText}>{isFabOpen ? '×' : '＋'}</Text>
             </TouchableOpacity>
 
-            {showPicker && (
-                <DateTimePicker value={date} mode="date" display="default" onChange={onDateChange} />
-            )}
+            {/* メニュー（その他の画面） */}
+            <Modal visible={isMenuOpen} transparent animationType="slide" onRequestClose={() => setIsMenuOpen(false)}>
+                <TouchableOpacity style={styles.sheetOverlay} activeOpacity={1} onPress={() => setIsMenuOpen(false)}>
+                    <View style={styles.sheet}>
+                        <View style={styles.sheetHandle} />
+                        {MENU_ITEMS.map((m) => (
+                            <TouchableOpacity key={m.label} style={styles.sheetRow} onPress={() => openMenuItem(m.href)}>
+                                <View style={[styles.sheetIcon, { backgroundColor: m.color }]}>
+                                    <Text>{m.icon}</Text>
+                                </View>
+                                <Text style={styles.sheetLabel}>{m.label}</Text>
+                                <Text style={styles.sheetChevron}>›</Text>
+                            </TouchableOpacity>
+                        ))}
+                    </View>
+                </TouchableOpacity>
+            </Modal>
         </View>
     );
 }
@@ -1269,4 +774,24 @@ const createStyles = (c: AppColors) => StyleSheet.create({
         fontWeight: '700',
         fontSize: 18,
     },
+    menuPill: {
+        position: 'absolute',
+        right: 16,
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: c.card,
+        borderWidth: 1,
+        borderColor: c.border,
+    },
+    menuPillText: { fontSize: 18, fontWeight: '700', color: c.primaryText },
+    sheetOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
+    sheet: { backgroundColor: c.card, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingTop: 12, paddingBottom: 28, paddingHorizontal: 8 },
+    sheetHandle: { alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: c.border, marginBottom: 8 },
+    sheetRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, paddingHorizontal: 12 },
+    sheetIcon: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center', marginRight: 14 },
+    sheetLabel: { flex: 1, fontSize: 16, fontWeight: '600', color: c.text },
+    sheetChevron: { fontSize: 20, color: c.textMuted },
 });
