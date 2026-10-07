@@ -31,7 +31,10 @@
     },
     "plugins": [
       "expo-router",
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "expo-font",
+      "expo-web-browser",
+      "./plugins/with-xcode27-fixes.js"
     ],
     "experiments": {
       "typedRoutes": true,
