@@ -1,5 +1,6 @@
 import { Collapsible } from '@/components/ui/collapsible';
-import React, { useState } from 'react';
+import { AppColors, useAppColors } from '@/hooks/use-app-colors';
+import React, { useState, useMemo } from 'react';
 import {
     FlatList,
     Modal,
@@ -26,6 +27,9 @@ interface SearchFilterProps {
 }
 
 export default function SearchFilter({ history, categories, onBack }: SearchFilterProps) {
+    const c = useAppColors();
+    const styles = useMemo(() => createStyles(c), [c]);
+    const modalStyles = useMemo(() => createModalStyles(c), [c]);
     const [searchText, setSearchText] = useState('');
     const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
     const [startDate, setStartDate] = useState<Date | null>(null);
@@ -35,6 +39,12 @@ export default function SearchFilter({ history, categories, onBack }: SearchFilt
     // カレンダーモーダル用のカレンダーモンスター
     const [startCalendarMonth, setStartCalendarMonth] = useState(() => new Date());
     const [endCalendarMonth, setEndCalendarMonth] = useState(() => new Date());
+
+    // 日付文字列をDateオブジェクトに変換
+    const parseDate = (dateStr: string): Date => {
+        const [y, m, d] = dateStr.split('/').map(Number);
+        return new Date(y, m - 1, d);
+    };
 
     // フィルター条件に基づいて結果を絞り込む
     const filteredResults = history.filter((item) => {
@@ -66,12 +76,6 @@ export default function SearchFilter({ history, categories, onBack }: SearchFilt
 
         return true;
     });
-
-    // 日付文字列をDateオブジェクトに変換
-    const parseDate = (dateStr: string): Date => {
-        const [y, m, d] = dateStr.split('/').map(Number);
-        return new Date(y, m - 1, d);
-    };
 
     // 日付をフォーマット
     const formatDate = (date: Date | null): string => {
@@ -305,9 +309,9 @@ export default function SearchFilter({ history, categories, onBack }: SearchFilt
                         <View style={modalStyles.overlay}>
                             <View style={modalStyles.container}>
                                 <View style={modalStyles.header}>
-                                    <TouchableOpacity onPress={() => goPrevMonth('start')} style={modalStyles.navBtn}><Text>‹</Text></TouchableOpacity>
+                                    <TouchableOpacity onPress={() => goPrevMonth('start')} style={modalStyles.navBtn}><Text style={{ color: c.text }}>‹</Text></TouchableOpacity>
                                     <Text style={modalStyles.headerTitle}>{startCalendarMonth.getFullYear()}年 {startCalendarMonth.getMonth() + 1}月</Text>
-                                    <TouchableOpacity onPress={() => goNextMonth('start')} style={modalStyles.navBtn}><Text>›</Text></TouchableOpacity>
+                                    <TouchableOpacity onPress={() => goNextMonth('start')} style={modalStyles.navBtn}><Text style={{ color: c.text }}>›</Text></TouchableOpacity>
                                 </View>
 
                                 <View style={modalStyles.weekdaysRow}>
@@ -350,9 +354,9 @@ export default function SearchFilter({ history, categories, onBack }: SearchFilt
                         <View style={modalStyles.overlay}>
                             <View style={modalStyles.container}>
                                 <View style={modalStyles.header}>
-                                    <TouchableOpacity onPress={() => goPrevMonth('end')} style={modalStyles.navBtn}><Text>‹</Text></TouchableOpacity>
+                                    <TouchableOpacity onPress={() => goPrevMonth('end')} style={modalStyles.navBtn}><Text style={{ color: c.text }}>‹</Text></TouchableOpacity>
                                     <Text style={modalStyles.headerTitle}>{endCalendarMonth.getFullYear()}年 {endCalendarMonth.getMonth() + 1}月</Text>
-                                    <TouchableOpacity onPress={() => goNextMonth('end')} style={modalStyles.navBtn}><Text>›</Text></TouchableOpacity>
+                                    <TouchableOpacity onPress={() => goNextMonth('end')} style={modalStyles.navBtn}><Text style={{ color: c.text }}>›</Text></TouchableOpacity>
                                 </View>
 
                                 <View style={modalStyles.weekdaysRow}>
@@ -392,39 +396,39 @@ export default function SearchFilter({ history, categories, onBack }: SearchFilt
     );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: AppColors) => StyleSheet.create({
     // minHeight:0 を追加して子要素（FlatList）が正しく伸縮できるようにする
     // height: '100%' を追加して、親が flex を持たない場合でも全高を確保する
-    container: { flex: 1, minHeight: 0, height: '100%', backgroundColor: '#F8F9FA', paddingTop: Platform.OS === 'web' ? 10 : (Platform.OS === 'ios' ? 12 : 8) },
+    container: { flex: 1, minHeight: 0, height: '100%', backgroundColor: c.background, paddingTop: Platform.OS === 'web' ? 10 : (Platform.OS === 'ios' ? 12 : 8) },
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
         paddingHorizontal: 16,
         paddingVertical: 16,
-        backgroundColor: '#FFFFFF',
+        backgroundColor: c.card,
         borderBottomWidth: 1,
-        borderBottomColor: '#E0E0E0',
+        borderBottomColor: c.border,
     },
-    backText: { color: '#5B4FA3', fontSize: 16, fontWeight: '600' },
-    title: { fontSize: 20, fontWeight: '700', color: '#1A1A1A' },
+    backText: { color: c.primaryText, fontSize: 16, fontWeight: '600' },
+    title: { fontSize: 20, fontWeight: '700', color: c.text },
 
     searchContainer: {
         paddingHorizontal: 16,
         paddingVertical: 12,
-        backgroundColor: '#FFFFFF',
+        backgroundColor: c.card,
         borderBottomWidth: 1,
-        borderBottomColor: '#E0E0E0',
+        borderBottomColor: c.border,
     },
     searchInput: {
-        backgroundColor: '#F8F9FA',
+        backgroundColor: c.background,
         paddingHorizontal: 14,
         paddingVertical: 12,
         borderRadius: 10,
         fontSize: 15,
         borderWidth: 1,
-        borderColor: '#E0E0E0',
-        color: '#1A1A1A'
+        borderColor: c.border,
+        color: c.text
     },
 
     filterSection: {
@@ -439,7 +443,7 @@ const styles = StyleSheet.create({
         elevation: 0,
         borderWidth: 0,
     },
-    filterLabel: { fontSize: 14, fontWeight: '700', color: '#1A1A1A', marginBottom: 10 },
+    filterLabel: { fontSize: 14, fontWeight: '700', color: c.text, marginBottom: 10 },
 
     categoryFilter: {
         flexDirection: 'row',
@@ -447,25 +451,25 @@ const styles = StyleSheet.create({
         gap: 10,
     },
     collapsibleContent: {
-        backgroundColor: '#FFFFFF',
+        backgroundColor: c.card,
         padding: 12,
         borderRadius: 12,
         // 軽い影でカード感を出す
         elevation: 2,
         borderWidth: 1,
-        borderColor: '#EFEFEF',
+        borderColor: c.border,
     },
     categoryTag: {
         paddingHorizontal: 14,
         paddingVertical: 10,
         borderRadius: 22,
         // タグは白背景にして背景とコントラストを確保
-        backgroundColor: '#FFFFFF',
+        backgroundColor: c.card,
         borderWidth: 1,
-        borderColor: '#E0E0E0',
+        borderColor: c.border,
     },
     categoryTagActive: { backgroundColor: '#5B4FA3', borderColor: '#5B4FA3' },
-    categoryTagText: { fontSize: 13, color: '#666666', fontWeight: '500' },
+    categoryTagText: { fontSize: 13, color: c.textSecondary, fontWeight: '500' },
     categoryTagTextActive: { color: '#fff', fontWeight: '700' },
 
     dateFilterRow: {
@@ -476,15 +480,15 @@ const styles = StyleSheet.create({
     dateButton: {
         flex: 1,
         // 日付ボタンは白背景にして視認性を向上
-        backgroundColor: '#FFFFFF',
+        backgroundColor: c.card,
         paddingVertical: 12,
         paddingHorizontal: 14,
         borderRadius: 10,
         borderWidth: 1,
-        borderColor: '#E0E0E0',
+        borderColor: c.border,
     },
-    dateButtonLabel: { fontSize: 12, color: '#B0B0B0', marginBottom: 4, fontWeight: '500' },
-    dateButtonValue: { fontSize: 14, fontWeight: '700', color: '#1A1A1A' },
+    dateButtonLabel: { fontSize: 12, color: c.textMuted, marginBottom: 4, fontWeight: '500' },
+    dateButtonValue: { fontSize: 14, fontWeight: '700', color: c.text },
 
     resetButton: {
         marginTop: 14,
@@ -501,10 +505,10 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         paddingHorizontal: 16,
         paddingVertical: 12,
-        backgroundColor: '#F0F0F0',
+        backgroundColor: c.chip,
     },
-    resultCount: { fontSize: 14, color: '#666666', fontWeight: '500' },
-    resultTotal: { fontSize: 14, fontWeight: '700', color: '#1A1A1A' },
+    resultCount: { fontSize: 14, color: c.textSecondary, fontWeight: '500' },
+    resultTotal: { fontSize: 14, fontWeight: '700', color: c.text },
     resultIncome: { fontSize: 13, fontWeight: '700', color: '#27AE60' },
     resultExpense: { fontSize: 13, fontWeight: '700', color: '#E74C3C' },
 
@@ -512,7 +516,7 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        backgroundColor: '#FFFFFF',
+        backgroundColor: c.card,
         paddingHorizontal: 16,
         paddingVertical: 14,
         marginHorizontal: 12,
@@ -522,15 +526,15 @@ const styles = StyleSheet.create({
         borderLeftWidth: 4,
         borderLeftColor: '#5B4FA3',
     },
-    resultItemName: { fontSize: 15, fontWeight: '600', color: '#1A1A1A' },
-    resultItemMeta: { fontSize: 12, color: '#B0B0B0', marginTop: 3, fontWeight: '500' },
-    resultItemAmount: { fontSize: 15, fontWeight: '700', color: '#5B4FA3' },
+    resultItemName: { fontSize: 15, fontWeight: '600', color: c.text },
+    resultItemMeta: { fontSize: 12, color: c.textMuted, marginTop: 3, fontWeight: '500' },
+    resultItemAmount: { fontSize: 15, fontWeight: '700', color: c.primaryText },
 
     emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-    emptyText: { fontSize: 16, color: '#B0B0B0', fontWeight: '500' },
+    emptyText: { fontSize: 16, color: c.textMuted, fontWeight: '500' },
 });
 
-const modalStyles = StyleSheet.create({
+const createModalStyles = (c: AppColors) => StyleSheet.create({
     overlay: {
         flex: 1,
         backgroundColor: 'rgba(0,0,0,0.4)',
@@ -541,7 +545,7 @@ const modalStyles = StyleSheet.create({
     container: {
         width: '100%',
         maxWidth: 520,
-        backgroundColor: '#fff',
+        backgroundColor: c.card,
         borderRadius: 12,
         padding: 12,
     },
@@ -557,7 +561,7 @@ const modalStyles = StyleSheet.create({
     headerTitle: {
         fontSize: 16,
         fontWeight: '700',
-        color: '#1A1A1A',
+        color: c.text,
     },
     weekdaysRow: {
         flexDirection: 'row',
@@ -567,7 +571,7 @@ const modalStyles = StyleSheet.create({
     weekday: {
         width: 36,
         textAlign: 'center',
-        color: '#888',
+        color: c.textMuted,
         fontWeight: '700',
     },
     weekRow: {
@@ -586,7 +590,7 @@ const modalStyles = StyleSheet.create({
         backgroundColor: '#5B4FA3',
     },
     dayText: {
-        color: '#222',
+        color: c.text,
     },
     dayTextSelected: {
         color: '#fff',
@@ -601,7 +605,7 @@ const modalStyles = StyleSheet.create({
         paddingVertical: 8,
     },
     footerBtnText: {
-        color: '#5B4FA3',
+        color: c.primaryText,
         fontWeight: '700',
     }
 });

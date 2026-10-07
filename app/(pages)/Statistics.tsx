@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { AppColors, useAppColors } from '@/hooks/use-app-colors';
 import { Dimensions, FlatList, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { LineChart, PieChart } from 'react-native-chart-kit';
 
@@ -19,6 +20,8 @@ interface StatisticsProps {
 const screenWidth = Dimensions.get('window').width;
 
 export default function Statistics({ history, categories, onBack }: StatisticsProps) {
+    const c = useAppColors();
+    const styles = useMemo(() => createStyles(c), [c]);
     const [selectedPeriod, setSelectedPeriod] = useState<'1month' | '3month' | '6month'>('1month');
     const [monthlyData, setMonthlyData] = useState<{ month: string; income: number; expense: number }[]>([]);
     const [categoryData, setCategoryData] = useState<{ name: string; amount: number; color: string }[]>([]);
@@ -76,10 +79,10 @@ export default function Statistics({ history, categories, onBack }: StatisticsPr
             name,
             amount,
             color: colors[index % colors.length],
-            legendFontColor: '#7F7F7F',
+            legendFontColor: c.textSecondary,
             legendFontSize: 12,
         })).filter(d => d.amount > 0).sort((a, b) => b.amount - a.amount);
-    }, [monthExpenseTotalsMap]);
+    }, [monthExpenseTotalsMap, c.textSecondary]);
 
     const monthIncomeTotalsMap = useMemo(() => {
         const map: Record<string, number> = {};
@@ -97,10 +100,10 @@ export default function Statistics({ history, categories, onBack }: StatisticsPr
             name,
             amount,
             color: colors[(index + 2) % colors.length],
-            legendFontColor: '#7F7F7F',
+            legendFontColor: c.textSecondary,
             legendFontSize: 12,
         })).filter(d => d.amount > 0).sort((a, b) => b.amount - a.amount);
-    }, [monthIncomeTotalsMap]);
+    }, [monthIncomeTotalsMap, c.textSecondary]);
 
     const monthTotalExpense = useMemo(() => Object.values(monthExpenseTotalsMap).reduce((s, v) => s + v, 0), [monthExpenseTotalsMap]);
     const monthTotalIncome = useMemo(() => Object.values(monthIncomeTotalsMap).reduce((s, v) => s + v, 0), [monthIncomeTotalsMap]);
@@ -185,7 +188,7 @@ export default function Statistics({ history, categories, onBack }: StatisticsPr
                 name,
                 amount,
                 color: colors[index % colors.length],
-                legendFontColor: '#7F7F7F',
+                legendFontColor: c.textSecondary,
                 legendFontSize: 12,
             }))
             .filter(d => d.amount > 0)
@@ -208,7 +211,7 @@ export default function Statistics({ history, categories, onBack }: StatisticsPr
                 name,
                 amount,
                 color: colors[(index + 2) % colors.length],
-                legendFontColor: '#7F7F7F',
+                legendFontColor: c.textSecondary,
                 legendFontSize: 12,
             }))
             .filter(d => d.amount > 0)
@@ -243,7 +246,7 @@ export default function Statistics({ history, categories, onBack }: StatisticsPr
             maxIncomeAmount: maxIncome.amount,
             transactionCount: sourceForStats.length,
         });
-    }, [history, selectedPeriod, categories, showAllTime, filteredHistory]);
+    }, [history, selectedPeriod, categories, showAllTime, filteredHistory, c.textSecondary]);
 
     // 月別推移データ（収入・支出を別線で表示するための LineChart 用データ）
     const lineChartData = {
@@ -369,12 +372,12 @@ export default function Statistics({ history, categories, onBack }: StatisticsPr
                             width={screenWidth - 64}
                             height={220}
                             chartConfig={{
-                                backgroundColor: '#fff',
-                                backgroundGradientFrom: '#fff',
-                                backgroundGradientTo: '#fff',
+                                backgroundColor: c.card,
+                                backgroundGradientFrom: c.card,
+                                backgroundGradientTo: c.card,
                                 decimalPlaces: 0,
-                                color: (opacity = 1) => `rgba(26,26,26, ${opacity})`,
-                                labelColor: (opacity = 1) => `rgba(100,100,100, ${opacity})`,
+                                color: (opacity = 1) => `rgba(${c.chartRgb}, ${opacity})`,
+                                labelColor: (opacity = 1) => `rgba(${c.chartLabelRgb}, ${opacity})`,
                                 style: { borderRadius: 8 },
                                 propsForDots: {
                                     r: '3',
@@ -551,27 +554,27 @@ export default function Statistics({ history, categories, onBack }: StatisticsPr
     );
 }
 
-const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#F8F9FA', paddingTop: Platform.OS === 'web' ? 10 : (Platform.OS === 'ios' ? 12 : 8) },
+const createStyles = (c: AppColors) => StyleSheet.create({
+    container: { flex: 1, backgroundColor: c.background, paddingTop: Platform.OS === 'web' ? 10 : (Platform.OS === 'ios' ? 12 : 8) },
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
         paddingHorizontal: 16,
         paddingVertical: 16,
-        backgroundColor: '#FFFFFF',
+        backgroundColor: c.card,
         borderBottomWidth: 1,
-        borderBottomColor: '#E0E0E0',
+        borderBottomColor: c.border,
     },
     // 新しいヘッダーデザイン用のスタイル
     headerLeft: { flexDirection: 'row', alignItems: 'center' },
     iconButton: { padding: 6, marginRight: 8, borderRadius: 8 },
-    backIcon: { fontSize: 22, color: '#5B4FA3', fontWeight: '700' },
+    backIcon: { fontSize: 22, color: c.primaryText, fontWeight: '700' },
     appIcon: { width: 36, height: 36, borderRadius: 9, backgroundColor: '#5B4FA3', alignItems: 'center', justifyContent: 'center' },
     appIconText: { color: '#fff', fontWeight: '800', fontSize: 16 },
-    title: { fontSize: 20, fontWeight: '700', color: '#1A1A1A' },
+    title: { fontSize: 20, fontWeight: '700', color: c.text },
     headerRight: { padding: 6 },
-    headerRightText: { fontSize: 18, color: '#8A8A8A' },
+    headerRightText: { fontSize: 18, color: c.textMuted },
 
     // ホーム画面と同様の月移動 / 月集計用スタイル
     monthNav: { 
@@ -584,12 +587,12 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         paddingVertical: 6,
         paddingHorizontal: 12,
-        backgroundColor: '#FFFFFF',
+        backgroundColor: c.card,
         borderRadius: 10,
         minWidth: 110,
         elevation: 1,
         borderWidth: 1,
-        borderColor: '#F0F0F0',
+        borderColor: c.border,
         alignSelf: 'center',
         marginHorizontal: 8,
     },
@@ -601,18 +604,18 @@ const styles = StyleSheet.create({
     },
     monthNavBtnText: {
         fontSize: 22,
-        color: '#5B4FA3',
+        color: c.primaryText,
         fontWeight: '700',
     },
     monthText: { 
         fontSize: 18, 
         fontWeight: '700',
-        color: '#5B4FA3',
+        color: c.primaryText,
         marginTop: 0,
     },
 
     monthlyTotalCard: {
-        backgroundColor: '#FFFFFF',
+        backgroundColor: c.card,
         marginHorizontal: 16,
         marginTop: 8,
         marginBottom: 12,
@@ -623,23 +626,23 @@ const styles = StyleSheet.create({
     },
     monthlyTotalLabel: {
         fontSize: 12,
-        color: '#999999',
+        color: c.textMuted,
         marginBottom: 6,
         fontWeight: '600',
     },
     monthlyTotalAmount: {
         fontSize: 22,
-        color: '#5B4FA3',
+        color: c.primaryText,
         fontWeight: '800',
     },
 
-    backText: { color: '#5B4FA3', fontSize: 16, fontWeight: '600' },
+    backText: { color: c.primaryText, fontSize: 16, fontWeight: '600' },
 
     summaryContainer: {
         flexDirection: 'row',
         justifyContent: 'space-around',
         paddingVertical: 18,
-        backgroundColor: '#FFFFFF',
+        backgroundColor: c.card,
         marginHorizontal: 16,
         marginVertical: 12,
         borderRadius: 12,
@@ -650,8 +653,8 @@ const styles = StyleSheet.create({
         shadowRadius: 3,
     },
     summaryItem: { alignItems: 'center' },
-    summaryLabel: { fontSize: 13, color: '#666666', marginBottom: 6, fontWeight: '500' },
-    summaryValue: { fontSize: 20, fontWeight: '700', color: '#5B4FA3' },
+    summaryLabel: { fontSize: 13, color: c.textSecondary, marginBottom: 6, fontWeight: '500' },
+    summaryValue: { fontSize: 20, fontWeight: '700', color: c.primaryText },
 
     periodSelector: {
         flexDirection: 'row',
@@ -663,16 +666,16 @@ const styles = StyleSheet.create({
         paddingHorizontal: 16,
         paddingVertical: 10,
         borderRadius: 22,
-        backgroundColor: '#FFFFFF',
+        backgroundColor: c.card,
         borderWidth: 1,
-        borderColor: '#E0E0E0',
+        borderColor: c.border,
     },
     periodBtnActive: { backgroundColor: '#5B4FA3', borderColor: '#5B4FA3' },
-    periodBtnText: { fontSize: 13, color: '#666666', fontWeight: '600' },
+    periodBtnText: { fontSize: 13, color: c.textSecondary, fontWeight: '600' },
     periodBtnTextActive: { color: '#fff', fontWeight: '700' },
 
     chartContainer: {
-        backgroundColor: '#FFFFFF',
+        backgroundColor: c.card,
         marginHorizontal: 16,
         marginBottom: 16,
         borderRadius: 12,
@@ -683,7 +686,7 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.1,
         shadowRadius: 3,
     },
-    chartTitle: { fontSize: 15, fontWeight: '700', marginBottom: 12, color: '#1A1A1A' },
+    chartTitle: { fontSize: 15, fontWeight: '700', marginBottom: 12, color: c.text },
     chart: { alignSelf: 'center' },
 
     // Pie layout: center the whole block and add spacing so pie doesn't hug left edge
@@ -695,8 +698,8 @@ const styles = StyleSheet.create({
     // compact vertical list for legends
     pieLegendWrap: { flexDirection: 'column' },
     colorDotSmall: { width: 10, height: 10, borderRadius: 5, marginRight: 8 },
-    pieLegendTextSmall: { fontSize: 12, color: '#1A1A1A', fontWeight: '600' },
-    pieLegendPercentSmall: { fontSize: 11, color: '#999999', marginLeft: 6, fontWeight: '600' },
+    pieLegendTextSmall: { fontSize: 12, color: c.text, fontWeight: '600' },
+    pieLegendPercentSmall: { fontSize: 11, color: c.textMuted, marginLeft: 6, fontWeight: '600' },
 
     // 凡例（円の下）スタイル
     pieLegendBelow: {
@@ -714,7 +717,7 @@ const styles = StyleSheet.create({
     },
 
     categoryDetailsContainer: {
-        backgroundColor: '#FFFFFF',
+        backgroundColor: c.card,
         marginHorizontal: 16,
         marginBottom: 16,
         borderRadius: 12,
@@ -731,24 +734,24 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         paddingVertical: 12,
         borderBottomWidth: 1,
-        borderBottomColor: '#F0F0F0',
+        borderBottomColor: c.border,
     },
     categoryInfo: { flexDirection: 'row', alignItems: 'center', flex: 1 },
     colorDot: { width: 14, height: 14, borderRadius: 7, marginRight: 12 },
-    categoryName: { fontSize: 14, fontWeight: '600', color: '#1A1A1A' },
-    categoryPercentage: { fontSize: 12, color: '#B0B0B0', marginTop: 2, fontWeight: '500' },
-    categoryAmount: { fontSize: 15, fontWeight: '700', color: '#5B4FA3' },
+    categoryName: { fontSize: 14, fontWeight: '600', color: c.text },
+    categoryPercentage: { fontSize: 12, color: c.textMuted, marginTop: 2, fontWeight: '500' },
+    categoryAmount: { fontSize: 15, fontWeight: '700', color: c.primaryText },
 
     // Pie legend (カテゴリ名のみ表示) スタイル
     pieLegend: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 12 },
     pieLegendItem: { flexDirection: 'row', alignItems: 'center', marginRight: 12, marginBottom: 8 },
-    pieLegendText: { fontSize: 13, color: '#1A1A1A', fontWeight: '600' },
+    pieLegendText: { fontSize: 13, color: c.text, fontWeight: '600' },
     // pieLegendAmount removed: legend now shows only name + percent
-    // pieLegendAmount: { fontSize: 12, color: '#666666', marginLeft: 8, fontWeight: '600' },
-    pieLegendPercent: { fontSize: 12, color: '#666666', marginLeft: 8, fontWeight: '600' },
+    // pieLegendAmount: { fontSize: 12, color: c.textSecondary, marginLeft: 8, fontWeight: '600' },
+    pieLegendPercent: { fontSize: 12, color: c.textSecondary, marginLeft: 8, fontWeight: '600' },
 
     topCategoryContainer: {
-        backgroundColor: '#FFFFFF',
+        backgroundColor: c.card,
         marginHorizontal: 16,
         marginBottom: 16,
         borderRadius: 12,
@@ -761,11 +764,11 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.1,
         shadowRadius: 3,
     },
-    topCategoryLabel: { fontSize: 12, color: '#666666', marginBottom: 8, fontWeight: '500' },
+    topCategoryLabel: { fontSize: 12, color: c.textSecondary, marginBottom: 8, fontWeight: '500' },
     topCategoryContent: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-    topCategoryName: { fontSize: 17, fontWeight: '700', color: '#1A1A1A' },
-    topCategoryAmount: { fontSize: 18, fontWeight: '700', color: '#5B4FA3' },
+    topCategoryName: { fontSize: 17, fontWeight: '700', color: c.text },
+    topCategoryAmount: { fontSize: 18, fontWeight: '700', color: c.primaryText },
 
     emptyContainer: { alignItems: 'center', justifyContent: 'center', paddingVertical: 60 },
-    emptyText: { fontSize: 16, color: '#B0B0B0', fontWeight: '500' },
+    emptyText: { fontSize: 16, color: c.textMuted, fontWeight: '500' },
 });

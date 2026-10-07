@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
+import { AppColors, useAppColors } from '@/hooks/use-app-colors';
 import {
     Alert,
     FlatList,
@@ -36,6 +37,8 @@ export default function Templates({
     categories,
     onBack,
 }: TemplatesProps) {
+    const c = useAppColors();
+    const styles = useMemo(() => createStyles(c), [c]);
     const [mode, setMode] = useState<'list' | 'add'>('list');
     const [templateName, setTemplateName] = useState('');
     const [templateItem, setTemplateItem] = useState('');
@@ -132,7 +135,7 @@ export default function Templates({
                             >
                                 <Text
                                     style={
-                                        templateCategory === cat ? { color: '#fff' } : { color: '#333' }
+                                        templateCategory === cat ? { color: '#fff' } : { color: c.text }
                                     }
                                 >
                                     {cat}
@@ -153,7 +156,7 @@ export default function Templates({
                     onPress={() => setMode('list')}
                     style={{ marginTop: 20 }}
                 >
-                    <Text style={{ color: '#666', textAlign: 'center' }}>キャンセル</Text>
+                    <Text style={{ color: c.textSecondary, textAlign: 'center' }}>キャンセル</Text>
                 </TouchableOpacity>
                 </View>
             </TouchableWithoutFeedback>
@@ -218,16 +221,16 @@ export default function Templates({
                 onPress={onBack}
                 style={{ marginTop: 15 }}
             >
-                <Text style={{ color: '#666', textAlign: 'center' }}>戻る</Text>
+                <Text style={{ color: c.textSecondary, textAlign: 'center' }}>戻る</Text>
             </TouchableOpacity>
         </View>
     );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: AppColors) => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#F8F9FA',
+        backgroundColor: c.background,
         padding: 16,
     },
     title: {
@@ -235,10 +238,10 @@ const styles = StyleSheet.create({
         fontWeight: '700',
         marginBottom: 24,
         textAlign: 'center',
-        color: '#1A1A1A'
+        color: c.text
     },
     card: {
-        backgroundColor: '#FFFFFF',
+        backgroundColor: c.card,
         padding: 20,
         borderRadius: 16,
         elevation: 3,
@@ -250,19 +253,19 @@ const styles = StyleSheet.create({
     },
     label: {
         fontSize: 15,
-        color: '#666666',
+        color: c.textSecondary,
         marginBottom: 8,
         marginTop: 12,
         fontWeight: '600'
     },
     input: {
-        backgroundColor: '#F8F9FA',
+        backgroundColor: c.background,
         padding: 14,
         borderRadius: 10,
         borderWidth: 1,
-        borderColor: '#E0E0E0',
+        borderColor: c.border,
         marginBottom: 12,
-        color: '#1A1A1A',
+        color: c.text,
         fontSize: 15
     },
     categoryRow: {
@@ -274,9 +277,9 @@ const styles = StyleSheet.create({
     catBtn: {
         padding: 12,
         borderRadius: 22,
-        backgroundColor: '#F0F0F0',
+        backgroundColor: c.chip,
         borderWidth: 1,
-        borderColor: '#E0E0E0'
+        borderColor: c.border
     },
     catBtnActive: {
         backgroundColor: '#5B4FA3',
@@ -315,11 +318,11 @@ const styles = StyleSheet.create({
     },
     emptyText: {
         fontSize: 16,
-        color: '#B0B0B0',
+        color: c.textMuted,
         fontWeight: '500'
     },
     templateItem: {
-        backgroundColor: '#FFFFFF',
+        backgroundColor: c.card,
         padding: 16,
         borderRadius: 12,
         marginBottom: 12,
@@ -336,12 +339,12 @@ const styles = StyleSheet.create({
     templateName: {
         fontSize: 16,
         fontWeight: '700',
-        color: '#1A1A1A',
+        color: c.text,
         marginBottom: 6,
     },
     templateDetail: {
         fontSize: 13,
-        color: '#B0B0B0',
+        color: c.textMuted,
         fontWeight: '500'
     },
     deleteBtn: {

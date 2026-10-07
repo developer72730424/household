@@ -1,6 +1,6 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import React, { useState } from 'react';
-import { Alert, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useState, useMemo } from 'react';
+import { AppColors, useAppColors } from '@/hooks/use-app-colors';
+import { Alert, Platform, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 interface HistoryItem {
     id: string;
@@ -14,24 +14,33 @@ interface ExportProps {
     history: HistoryItem[];
     categories: string[];
     onBack: () => void;
+    onResetData: () => Promise<void>;
+    onRestore: (history: HistoryItem[], categories: string[]) => Promise<void>;
 }
 
-export default function Export({ history, categories, onBack }: ExportProps) {
+export default function Export({ history, categories, onBack, onResetData, onRestore }: ExportProps) {
+    const c = useAppColors();
+    const styles = useMemo(() => createStyles(c), [c]);
     const [isExporting, setIsExporting] = useState(false);
+    const [restoreText, setRestoreText] = useState('');
+
+    const expenses = history.filter((item) => item.category !== '収入');
+    const totalExpense = expenses.reduce((sum, item) => sum + Number(item.amount), 0);
+    const totalIncome = history
+        .filter((item) => item.category === '収入')
+        .reduce((sum, item) => sum + Number(item.amount), 0);
+
+    // CSVのセルをエスケープ（カンマ・改行・ダブルクォートを含む場合）
+    const escapeCSV = (value: string): string => {
+        if (/[",\n\r]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
+        return value;
+    };
 
     // CSVフォーマットでデータを生成
     const generateCSV = (): string => {
         const headers = ['ID', '品目', '金額', 'カテゴリ', '日付'];
-        const rows = history.map((item) => [
-            item.id,
-            `"${item.item}"`, // CSV内のカンマを避けるためダブルクォート
-            item.amount,
-            item.category,
-            item.date,
-        ]);
-
-        const csv = [headers, ...rows].map((row) => row.join(',')).join('\n');
-        return csv;
+        const rows = history.map((item) => [item.id, item.item, item.amount, item.category, item.date]);
+        return [headers, ...rows].map((row) => row.map(escapeCSV).join(',')).join('\n');
     };
 
     // JSONフォーマットでデータを生成
@@ -40,8 +49,9 @@ export default function Export({ history, categories, onBack }: ExportProps) {
             exportDate: new Date().toISOString(),
             version: '1.0',
             summary: {
-                totalExpenses: history.length,
-                totalAmount: history.reduce((sum, item) => sum + Number(item.amount), 0),
+                totalRecords: history.length,
+                totalExpense,
+                totalIncome,
             },
             categories: categories,
             history: history,
@@ -51,13 +61,9 @@ export default function Export({ history, categories, onBack }: ExportProps) {
 
     // テキストレポートを生成
     const generateReport = (): string => {
-        const totalAmount = history.reduce((sum, item) => sum + Number(item.amount), 0);
         const categoryTotals: { [key: string]: number } = {};
-
-        categories.forEach((cat) => {
-            categoryTotals[cat] = history
-                .filter((item) => item.category === cat)
-                .reduce((sum, item) => sum + Number(item.amount), 0);
+        expenses.forEach((item) => {
+            categoryTotals[item.category] = (categoryTotals[item.category] || 0) + Number(item.amount);
         });
 
         let report = `家計簿レポート\n`;
@@ -65,20 +71,22 @@ export default function Export({ history, categories, onBack }: ExportProps) {
         report += `エクスポート日時: ${new Date().toLocaleString('ja-JP')}\n`;
         report += `\n`;
         report += `【概要】\n`;
-        report += `総支出額: ¥${totalAmount.toLocaleString()}\n`;
+        report += `総収入額: ¥${totalIncome.toLocaleString()}\n`;
+        report += `総支出額: ¥${totalExpense.toLocaleString()}\n`;
+        report += `収支: ¥${(totalIncome - totalExpense).toLocaleString()}\n`;
         report += `記録数: ${history.length}件\n`;
         report += `\n`;
         report += `【カテゴリ別支出】\n`;
 
         Object.entries(categoryTotals).forEach(([cat, amount]) => {
             if (amount > 0) {
-                const percentage = Math.round((amount / totalAmount) * 100);
+                const percentage = Math.round((amount / totalExpense) * 100);
                 report += `  ${cat}: ¥${amount.toLocaleString()} (${percentage}%)\n`;
             }
         });
 
         report += `\n`;
-        report += `【詳細な支出履歴】\n`;
+        report += `【詳細な履歴】\n`;
         report += `日付, 品目, 金額, カテゴリ\n`;
 
         history.forEach((item) => {
@@ -88,83 +96,74 @@ export default function Export({ history, categories, onBack }: ExportProps) {
         return report;
     };
 
-    // CSVをコピー/シェア
-    const exportCSV = async () => {
+    // 共有シートでエクスポート（メモ・メール・AirDrop・ファイル保存などへ渡せる）
+    const shareData = async (format: 'csv' | 'json' | 'report') => {
+        const generators = { csv: generateCSV, json: generateJSON, report: generateReport };
+        const titles = { csv: '家計簿データ（CSV）', json: '家計簿バックアップ（JSON）', report: '家計簿レポート' };
         try {
             setIsExporting(true);
-            const csv = generateCSV();
-            Alert.alert('CSVプレビュー', 'CSV形式のデータを表示します。長押しでコピーしてください。');
-            console.log('CSV Data:', csv);
+            await Share.share({ message: generators[format](), title: titles[format] });
         } catch (error) {
-            Alert.alert('エラー', 'CSVの生成に失敗しました');
+            Alert.alert('エラー', 'エクスポートに失敗しました');
             console.error(error);
         } finally {
             setIsExporting(false);
         }
     };
 
-    // JSONをコピー/バックアップ
-    const exportJSON = async () => {
+    // JSONバックアップを検証して復元
+    const restoreFromJSON = () => {
+        let parsed: any;
         try {
-            setIsExporting(true);
-            const json = generateJSON();
-            Alert.alert('JSONプレビュー', 'JSON形式のバックアップデータを表示します。長押しでコピーしてください。');
-            console.log('JSON Data:', json);
-        } catch (error) {
-            Alert.alert('エラー', 'JSONの生成に失敗しました');
-            console.error(error);
-        } finally {
-            setIsExporting(false);
-        }
-    };
-
-    // テキストレポートをコピー/シェア
-    const exportReport = async () => {
-        try {
-            setIsExporting(true);
-            const report = generateReport();
-            Alert.alert('レポートプレビュー', 'テキスト形式のレポートを表示します。長押しでコピーしてください。');
-            console.log('Report Data:', report);
+            parsed = JSON.parse(restoreText.trim());
         } catch {
-            Alert.alert('エラー', 'CSVの生成に失敗しました');
-        } finally {
-            setIsExporting(false);
+            Alert.alert('復元エラー', 'JSONとして読み取れませんでした。エクスポートしたJSONをそのまま貼り付けてください。');
+            return;
         }
-    };
-
-    // クリップボードにコピー
-    const copyToClipboard = async (format: 'csv' | 'json' | 'report') => {
-        try {
-            let text = '';
-            if (format === 'csv') {
-                text = generateCSV();
-            } else if (format === 'json') {
-                text = generateJSON();
-            } else {
-                text = generateReport();
-            }
-
-            // React Native Debuggerのコンソールに出力（開発時のワークアラウンド）
-            console.log(`${format.toUpperCase()} Data:`, text);
-            Alert.alert('情報', 'データはコンソールに出力されました。デバッガーで確認してください。');
-        } catch {
-            Alert.alert('エラー', 'JSONの生成に失敗しました');
-        } finally {
-            // noop
+        const items = parsed?.history;
+        const isValidItem = (it: any) =>
+            it && typeof it.id === 'string' && typeof it.item === 'string' &&
+            (typeof it.amount === 'string' || typeof it.amount === 'number') &&
+            typeof it.category === 'string' && typeof it.date === 'string' &&
+            /^\d{4}\/\d{1,2}\/\d{1,2}$/.test(it.date);
+        if (!Array.isArray(items) || !items.every(isValidItem)) {
+            Alert.alert('復元エラー', 'このアプリのバックアップ形式ではありません。');
+            return;
         }
+        const restoredHistory: HistoryItem[] = items.map((it: any) => ({ ...it, amount: String(it.amount) }));
+        const restoredCategories: string[] = Array.isArray(parsed.categories) && parsed.categories.every((c: any) => typeof c === 'string')
+            ? parsed.categories
+            : categories;
+
+        Alert.alert('データ復元', `${restoredHistory.length}件の記録で現在のデータ（${history.length}件）を置き換えます。よろしいですか？`, [
+            { text: 'キャンセル', style: 'cancel' },
+            {
+                text: '復元',
+                style: 'destructive',
+                onPress: async () => {
+                    try {
+                        await onRestore(restoredHistory, restoredCategories);
+                        setRestoreText('');
+                        Alert.alert('完了', 'データを復元しました。');
+                    } catch {
+                        Alert.alert('エラー', 'データの復元に失敗しました');
+                    }
+                },
+            },
+        ]);
     };
 
     // データをリセット
     const resetData = () => {
-        Alert.alert('データ削除', 'すべての支出データを削除しますか？この操作は戻せません', [
+        Alert.alert('データ削除', 'すべての収支データを削除しますか？この操作は戻せません', [
             { text: 'キャンセル', style: 'cancel' },
             {
                 text: '削除',
                 style: 'destructive',
-                    onPress: async () => {
+                onPress: async () => {
                     try {
-                        await AsyncStorage.removeItem('@expense_history');
-                        Alert.alert('完了', 'データが削除されました。アプリを再起動してください。');
+                        await onResetData();
+                        Alert.alert('完了', 'データが削除されました。');
                     } catch {
                         Alert.alert('エラー', 'データの削除に失敗しました');
                     }
@@ -172,8 +171,6 @@ export default function Export({ history, categories, onBack }: ExportProps) {
             },
         ]);
     };
-
-    const totalAmount = history.reduce((sum, item) => sum + Number(item.amount), 0);
 
     return (
         <View style={styles.container}>
@@ -195,8 +192,12 @@ export default function Export({ history, categories, onBack }: ExportProps) {
                         <Text style={styles.summaryValue}>{history.length}件</Text>
                     </View>
                     <View style={styles.summaryRow}>
+                        <Text style={styles.summaryLabel}>総収入額:</Text>
+                        <Text style={styles.summaryValue}>¥{totalIncome.toLocaleString()}</Text>
+                    </View>
+                    <View style={styles.summaryRow}>
                         <Text style={styles.summaryLabel}>総支出額:</Text>
-                        <Text style={styles.summaryValue}>¥{totalAmount.toLocaleString()}</Text>
+                        <Text style={styles.summaryValue}>¥{totalExpense.toLocaleString()}</Text>
                     </View>
                     <View style={styles.summaryRow}>
                         <Text style={styles.summaryLabel}>カテゴリ数:</Text>
@@ -217,17 +218,10 @@ export default function Export({ history, categories, onBack }: ExportProps) {
                         <View style={styles.exportButtons}>
                             <TouchableOpacity
                                 style={[styles.exportBtn, styles.exportBtnPrimary]}
-                                onPress={exportCSV}
+                                onPress={() => shareData('csv')}
                                 disabled={isExporting || history.length === 0}
                             >
-                                <Text style={styles.exportBtnText}>� コピー</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                style={[styles.exportBtn, styles.exportBtnSecondary]}
-                                onPress={() => copyToClipboard('csv')}
-                                disabled={isExporting || history.length === 0}
-                            >
-                                <Text style={styles.exportBtnText2}>🔗 表示</Text>
+                                <Text style={styles.exportBtnText}>📤 共有・保存</Text>
                             </TouchableOpacity>
                         </View>
                     </View>
@@ -241,17 +235,10 @@ export default function Export({ history, categories, onBack }: ExportProps) {
                         <View style={styles.exportButtons}>
                             <TouchableOpacity
                                 style={[styles.exportBtn, styles.exportBtnPrimary]}
-                                onPress={exportJSON}
+                                onPress={() => shareData('json')}
                                 disabled={isExporting || history.length === 0}
                             >
-                                <Text style={styles.exportBtnText}>� コピー</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                style={[styles.exportBtn, styles.exportBtnSecondary]}
-                                onPress={() => copyToClipboard('json')}
-                                disabled={isExporting || history.length === 0}
-                            >
-                                <Text style={styles.exportBtnText2}>🔗 表示</Text>
+                                <Text style={styles.exportBtnText}>📤 共有・保存</Text>
                             </TouchableOpacity>
                         </View>
                     </View>
@@ -265,19 +252,37 @@ export default function Export({ history, categories, onBack }: ExportProps) {
                         <View style={styles.exportButtons}>
                             <TouchableOpacity
                                 style={[styles.exportBtn, styles.exportBtnPrimary]}
-                                onPress={exportReport}
+                                onPress={() => shareData('report')}
                                 disabled={isExporting || history.length === 0}
                             >
-                                <Text style={styles.exportBtnText}>� コピー</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                style={[styles.exportBtn, styles.exportBtnSecondary]}
-                                onPress={() => copyToClipboard('report')}
-                                disabled={isExporting || history.length === 0}
-                            >
-                                <Text style={styles.exportBtnText2}>🔗 表示</Text>
+                                <Text style={styles.exportBtnText}>📤 共有・保存</Text>
                             </TouchableOpacity>
                         </View>
+                    </View>
+                </View>
+
+                {/* 復元セクション */}
+                <View style={styles.section}>
+                    <Text style={styles.sectionTitle}>📥 バックアップから復元</Text>
+                    <View style={styles.exportCard}>
+                        <Text style={styles.exportDesc}>JSON形式で共有したバックアップを貼り付けてください</Text>
+                        <TextInput
+                            style={styles.restoreInput}
+                            multiline
+                            placeholder='{"exportDate": ... }'
+                            placeholderTextColor={c.textMuted}
+                            value={restoreText}
+                            onChangeText={setRestoreText}
+                            autoCapitalize="none"
+                            autoCorrect={false}
+                        />
+                        <TouchableOpacity
+                            style={[styles.exportBtn, styles.exportBtnPrimary, !restoreText.trim() && { opacity: 0.5 }]}
+                            onPress={restoreFromJSON}
+                            disabled={!restoreText.trim()}
+                        >
+                            <Text style={styles.exportBtnText}>復元する</Text>
+                        </TouchableOpacity>
                     </View>
                 </View>
 
@@ -294,7 +299,7 @@ export default function Export({ history, categories, onBack }: ExportProps) {
                     </TouchableOpacity>
 
                     <Text style={styles.warningText}>
-                        注意: この操作はすべての支出記録を削除します。事前にバックアップを作成することをお勧めします。
+                        注意: この操作はすべての収支記録を削除します。事前にバックアップを作成することをお勧めします。
                     </Text>
                 </View>
 
@@ -302,13 +307,13 @@ export default function Export({ history, categories, onBack }: ExportProps) {
                 <View style={styles.infoCard}>
                     <Text style={styles.infoTitle}>ℹ️ エクスポートについて</Text>
                     <Text style={styles.infoText}>
-                        • CSV形式: クリップボードにコピーしてExcelやGoogle Sheetsにペーストして分析できます
+                        • CSV形式: 共有メニューからメモやファイルに保存し、ExcelやGoogle Sheetsで分析できます
                     </Text>
                     <Text style={styles.infoText}>
-                        • JSON形式: 完全なバックアップをクリップボードにコピーしてクラウドストレージに保存できます
+                        • JSON形式: 完全なバックアップです。保存した内容を「バックアップから復元」に貼り付けると元に戻せます
                     </Text>
                     <Text style={styles.infoText}>
-                        • テキストレポート: クリップボードにコピーしてメールやメモアプリに貼り付けられます
+                        • テキストレポート: 共有メニューからメールやメモアプリに送れます
                     </Text>
                 </View>
 
@@ -318,25 +323,38 @@ export default function Export({ history, categories, onBack }: ExportProps) {
     );
 }
 
-const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#F8F9FA', paddingTop: Platform.OS === 'web' ? 10 : (Platform.OS === 'ios' ? 12 : 8) },
+const createStyles = (c: AppColors) => StyleSheet.create({
+    restoreInput: {
+        minHeight: 100,
+        maxHeight: 200,
+        borderWidth: 1,
+        borderColor: c.border,
+        borderRadius: 8,
+        padding: 10,
+        marginVertical: 10,
+        fontSize: 12,
+        textAlignVertical: 'top',
+        backgroundColor: c.background,
+        color: c.text,
+    },
+    container: { flex: 1, backgroundColor: c.background, paddingTop: Platform.OS === 'web' ? 10 : (Platform.OS === 'ios' ? 12 : 8) },
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
         paddingHorizontal: 16,
         paddingVertical: 16,
-        backgroundColor: '#FFFFFF',
+        backgroundColor: c.card,
         borderBottomWidth: 1,
-        borderBottomColor: '#E0E0E0',
+        borderBottomColor: c.border,
     },
-    backText: { color: '#5B4FA3', fontSize: 16, fontWeight: '600' },
-    title: { fontSize: 20, fontWeight: '700', color: '#1A1A1A' },
+    backText: { color: c.primaryText, fontSize: 16, fontWeight: '600' },
+    title: { fontSize: 20, fontWeight: '700', color: c.text },
 
     content: { flex: 1, paddingHorizontal: 16, paddingTop: 16 },
 
     summaryCard: {
-        backgroundColor: '#FFFFFF',
+        backgroundColor: c.card,
         borderRadius: 12,
         padding: 16,
         marginBottom: 16,
@@ -344,33 +362,33 @@ const styles = StyleSheet.create({
         borderLeftWidth: 4,
         borderLeftColor: '#5B4FA3',
     },
-    summaryTitle: { fontSize: 15, fontWeight: '700', marginBottom: 12, color: '#1A1A1A' },
+    summaryTitle: { fontSize: 15, fontWeight: '700', marginBottom: 12, color: c.text },
     summaryRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         paddingVertical: 6,
     },
-    summaryLabel: { fontSize: 14, color: '#666666', fontWeight: '500' },
-    summaryValue: { fontSize: 14, fontWeight: '700', color: '#5B4FA3' },
+    summaryLabel: { fontSize: 14, color: c.textSecondary, fontWeight: '500' },
+    summaryValue: { fontSize: 14, fontWeight: '700', color: c.primaryText },
 
     section: { marginBottom: 20 },
     sectionTitle: {
         fontSize: 15,
         fontWeight: '700',
         marginBottom: 12,
-        color: '#1A1A1A',
+        color: c.text,
     },
 
     exportCard: {
-        backgroundColor: '#FFFFFF',
+        backgroundColor: c.card,
         borderRadius: 12,
         padding: 14,
         marginBottom: 12,
         elevation: 2,
     },
     exportHeader: { marginBottom: 12 },
-    exportTitle: { fontSize: 14, fontWeight: '700', color: '#1A1A1A' },
-    exportDesc: { fontSize: 12, color: '#B0B0B0', marginTop: 2, fontWeight: '500' },
+    exportTitle: { fontSize: 14, fontWeight: '700', color: c.text },
+    exportDesc: { fontSize: 12, color: c.textMuted, marginTop: 2, fontWeight: '500' },
 
     exportButtons: {
         flexDirection: 'row',
@@ -384,9 +402,9 @@ const styles = StyleSheet.create({
         elevation: 2,
     },
     exportBtnPrimary: { backgroundColor: '#5B4FA3' },
-    exportBtnSecondary: { backgroundColor: '#F0F0F0', borderWidth: 1, borderColor: '#E0E0E0' },
+    exportBtnSecondary: { backgroundColor: c.chip, borderWidth: 1, borderColor: c.border },
     exportBtnText: { fontSize: 13, color: '#fff', fontWeight: '700' },
-    exportBtnText2: { fontSize: 13, color: '#1A1A1A', fontWeight: '700' },
+    exportBtnText2: { fontSize: 13, color: c.text, fontWeight: '700' },
 
     dangerButton: {
         backgroundColor: '#FF3B30',
@@ -402,7 +420,7 @@ const styles = StyleSheet.create({
         fontSize: 12,
         color: '#D32F2F',
         padding: 12,
-        backgroundColor: '#FFEBEE',
+        backgroundColor: c.dangerBg,
         borderRadius: 10,
         borderLeftWidth: 4,
         borderLeftColor: '#FF3B30',
@@ -410,12 +428,12 @@ const styles = StyleSheet.create({
     },
 
     infoCard: {
-        backgroundColor: '#E8EAF6',
+        backgroundColor: c.tintBg,
         borderRadius: 12,
         padding: 14,
         borderLeftWidth: 4,
         borderLeftColor: '#5B4FA3',
     },
-    infoTitle: { fontSize: 13, fontWeight: '700', marginBottom: 8, color: '#5B4FA3' },
-    infoText: { fontSize: 12, color: '#5B4FA3', marginBottom: 5, lineHeight: 18, fontWeight: '500' },
+    infoTitle: { fontSize: 13, fontWeight: '700', marginBottom: 8, color: c.primaryText },
+    infoText: { fontSize: 12, color: c.primaryText, marginBottom: 5, lineHeight: 18, fontWeight: '500' },
 });

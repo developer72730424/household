@@ -1,7 +1,8 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
+import { AppColors, useAppColors } from '@/hooks/use-app-colors';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { Platform, StyleSheet, Text, View } from 'react-native';
 import 'react-native-reanimated';
 
@@ -12,6 +13,8 @@ export const unstable_settings = {
 };
 
 export default function RootLayout() {
+    const c = useAppColors();
+    const styles = useMemo(() => createStyles(c), [c]);
   const colorScheme = useColorScheme();
 
   // Web-only: set page title and perform a single, safe replacement of stray 'home'/'index' text
@@ -59,19 +62,19 @@ export default function RootLayout() {
   );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: AppColors) => StyleSheet.create({
   header: {
     height: Platform.OS === 'web' ? 50 : (Platform.OS === 'ios' ? 88 : 64),
     paddingTop: Platform.OS === 'web' ? 8 : (Platform.OS === 'ios' ? 44 : 20),
-    backgroundColor: '#FFFFFF',
+    backgroundColor: c.card,
     justifyContent: 'center',
     alignItems: 'center',
     borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
+    borderBottomColor: c.border,
   },
     title: {
     fontSize: 18,
     fontWeight: '700' as const,
-    color: '#1A1A1A',
+    color: c.text,
   },
 });

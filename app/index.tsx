@@ -1,12 +1,16 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { AppColors, useAppColors } from '@/hooks/use-app-colors';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Dimensions, FlatList, Keyboard, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { PieChart } from 'react-native-chart-kit';
 import CategorySettings from './(pages)/CategorySettings';
+import BudgetCard from '@/components/budget-card';
+import { generateDueEntries, RecurringRule } from '@/utils/recurring';
 import Export from './(pages)/Export';
 import InputIncome from './(pages)/InputIncome';
 import InputItem from './(pages)/InputItem';
+import Recurring from './(pages)/Recurring';
 import SearchFilter from './(pages)/SearchFilter';
 import Statistics from './(pages)/Statistics';
 import Templates, { Template } from './(pages)/Templates';
@@ -30,6 +34,8 @@ interface HistoryItem {
 }
 
 export default function App() {
+    const c = useAppColors();
+    const styles = useMemo(() => createStyles(c), [c]);
     // 状態（State）の定義：入力内容と履歴リストを管理します
     const [item, setItem] = useState('');      // 品目
     const [amount, setAmount] = useState('');  // 金額
@@ -38,7 +44,7 @@ export default function App() {
     const [date, setDate] = useState(new Date()); // 選択された日付オブジェクト
     const [showPicker, setShowPicker] = useState(false); // カレンダーを表示するかどうか
     const [currentMonth, setCurrentMonth] = useState(new Date()); // 表示中の年月
-    const [currentScreen, setCurrentScreen] = useState<'history' | 'add' | 'income' | 'settings' | 'statistics' | 'search' | 'export' | 'templates'>('history');
+    const [currentScreen, setCurrentScreen] = useState<'history' | 'add' | 'income' | 'settings' | 'statistics' | 'search' | 'export' | 'templates' | 'recurring'>('history');
     const [categories, setCategories] = useState<string[]>(['食費', '日用品', 'その他']); // 初期値
     const CATEGORY_STORAGE_KEY = '@app_categories'; // 保存用のキー
     const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -54,6 +60,13 @@ export default function App() {
     const getHistoryKey = () => `${STORAGE_KEY}_Default`;
     const getCategoryKey = () => `${CATEGORY_STORAGE_KEY}_Default`;
     const getTemplatesKey = () => `${TEMPLATES_STORAGE_KEY}_Default`;
+    const getBudgetKey = () => '@app_budget_Default';
+    const getRecurringKey = () => '@app_recurring_Default';
+
+    // 月間予算（全月共通、未設定は null）
+    const [budget, setBudget] = useState<number | null>(null);
+    // 固定費ルール
+    const [recurringRules, setRecurringRules] = useState<RecurringRule[]>([]);
 
 
     // 2. 起動時にカテゴリを読み込む（単一ユーザー）
@@ -83,21 +96,54 @@ export default function App() {
     // テンプレート / カテゴリ関連の処理は下でメモ化した関数を使用します
 
     // --- 追加：アプリ起動時にデータを読み込む ---
+    // 固定費の自動登録は履歴の読み込みと同時に行う（読み込み前の空配列で上書きしないため）
     useEffect(() => {
         const loadData = async () => {
             try {
-                const jsonValue = await AsyncStorage.getItem(getHistoryKey());
-                if (jsonValue !== null) {
-                    setHistory(JSON.parse(jsonValue));
-                } else {
-                    setHistory([]);
+                const [jsonValue, rulesJson, budgetValue] = await Promise.all([
+                    AsyncStorage.getItem(getHistoryKey()),
+                    AsyncStorage.getItem(getRecurringKey()),
+                    AsyncStorage.getItem(getBudgetKey()),
+                ]);
+                let loadedHistory: HistoryItem[] = jsonValue !== null ? JSON.parse(jsonValue) : [];
+                let rules: RecurringRule[] = rulesJson !== null ? JSON.parse(rulesJson) : [];
+
+                const { entries, updatedRules, changed } = generateDueEntries(rules);
+                if (changed) {
+                    loadedHistory = [...entries.reverse(), ...loadedHistory];
+                    rules = updatedRules;
+                    await Promise.all([
+                        AsyncStorage.setItem(getHistoryKey(), JSON.stringify(loadedHistory)),
+                        AsyncStorage.setItem(getRecurringKey(), JSON.stringify(rules)),
+                    ]);
                 }
+                setHistory(loadedHistory);
+                setRecurringRules(rules);
+                if (budgetValue !== null) setBudget(Number(budgetValue));
             } catch (e) {
                 console.error('読み込み失敗', e);
             }
         };
         loadData();
     }, []);
+
+    const changeBudget = useCallback(async (value: number | null) => {
+        setBudget(value);
+        if (value === null) await AsyncStorage.removeItem(getBudgetKey());
+        else await AsyncStorage.setItem(getBudgetKey(), String(value));
+    }, []);
+
+    const addRecurringRule = useCallback(async (rule: RecurringRule) => {
+        const updated = [...recurringRules, rule];
+        setRecurringRules(updated);
+        await AsyncStorage.setItem(getRecurringKey(), JSON.stringify(updated));
+    }, [recurringRules]);
+
+    const deleteRecurringRule = useCallback(async (id: string) => {
+        const updated = recurringRules.filter(r => r.id !== id);
+        setRecurringRules(updated);
+        await AsyncStorage.setItem(getRecurringKey(), JSON.stringify(updated));
+    }, [recurringRules]);
 
     // --- 追加：データを保存する関数 ---
     const saveData = useCallback(async (data: HistoryItem[]) => {
@@ -133,30 +179,25 @@ export default function App() {
 
     // 2. 履歴の中から、日付が一致するものだけを取り出す（メモ化）
     const filteredHistory = useMemo(() => {
-        return history.filter(item => item.date?.startsWith(displayYearMonth));
+        // "2026/1" が "2026/10" にも前方一致しないよう、末尾に "/" を付けて比較する
+        return history.filter(item => item.date?.startsWith(`${displayYearMonth}/`));
     }, [history, displayYearMonth]);
 
     // 当月の収支を計算（収入 - 支出）
-    const monthlyTotal = useMemo(() => {
+    const { monthlyIncome, monthlyExpense } = useMemo(() => {
         const income = filteredHistory
             .filter(it => it.category === '収入')
             .reduce((sum, it) => sum + Number(it.amount), 0);
         const expense = filteredHistory
             .filter(it => it.category !== '収入')
             .reduce((sum, it) => sum + Number(it.amount), 0);
-        return income - expense;
+        return { monthlyIncome: income, monthlyExpense: expense };
     }, [filteredHistory]);
+    const monthlyTotal = monthlyIncome - monthlyExpense;
 
     // delete/startEdit/update は下でメモ化した関数を使用します
 
     // 編集をキャンセルする関数（未使用のため削除）
-
-    // カテゴリごとの合計を計算する関数
-    const getCategoryTotal = (catName: string) => {
-        return filteredHistory // ★ history ではなく filteredHistory を使う
-            .filter((entry) => entry.category === catName)
-            .reduce((sum, current) => sum + Number(current.amount), 0);
-    };
 
     const onDateChange = (_event: any, selectedDate?: Date) => {
         setShowPicker(Platform.OS === 'ios'); // iOSは出しっぱなし、Androidは選択後閉じる
@@ -184,10 +225,10 @@ export default function App() {
             name: cat,
             amount: expenseCategoryTotals[cat] || 0,
             color: colors[index % colors.length],
-            legendFontColor: '#7F7F7F',
+            legendFontColor: c.textSecondary,
             legendFontSize: 12,
         })).filter(d => d.amount > 0);
-    }, [expenseCategoryTotals]);
+    }, [expenseCategoryTotals, c.textSecondary]);
 
     // カテゴリ削除用の関数
     const deleteCategory = useCallback(async (targetCat: string) => {
@@ -223,45 +264,56 @@ export default function App() {
         setCurrentScreen('add');
     }, []);
 
-    const addEntry = useCallback(() => {
-        if (item === '' || amount === '') return;
+    // 入力フォームを初期状態に戻す（キャンセル・保存後・新規入力開始時）
+    const resetForm = useCallback(() => {
+        setItem('');
+        setAmount('');
+        setSelectedCategory(categories[0] ?? '食費');
+        setDate(new Date());
+        setEditingId(null);
+        setIsEditMode(false);
+        Keyboard.dismiss();
+    }, [categories]);
+
+    // 入力値を検証し、正規化した金額を返す。不正な場合はアラートを出して null を返す
+    const validateInput = useCallback((): string | null => {
+        if (item.trim() === '') {
+            Alert.alert('入力エラー', '品目を入力してください');
+            return null;
+        }
+        // 全角数字・カンマを許容する
+        const normalized = amount
+            .replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0))
+            .replace(/[,，\s]/g, '');
+        const value = Number(normalized);
+        if (normalized === '' || !Number.isFinite(value) || value <= 0) {
+            Alert.alert('入力エラー', '金額は0より大きい数値で入力してください');
+            return null;
+        }
+        return String(value);
+    }, [item, amount]);
+
+    const addEntryWithCategory = useCallback((category: string): boolean => {
+        const validAmount = validateInput();
+        if (validAmount === null) return false;
 
         const newEntry: HistoryItem = {
             id: Date.now().toString(),
-            item: item,
-            amount: amount,
-            category: selectedCategory,
+            item: item.trim(),
+            amount: validAmount,
+            category,
             date: formatDate(date),
         };
 
         const newHistory = [newEntry, ...history];
         setHistory(newHistory);
         saveData(newHistory);
+        resetForm();
+        return true;
+    }, [item, date, history, saveData, validateInput, resetForm]);
 
-        setItem('');
-        setAmount('');
-        Keyboard.dismiss();
-    }, [item, amount, selectedCategory, date, history, saveData]);
-
-    const addIncome = useCallback(() => {
-        if (item === '' || amount === '') return;
-
-        const newEntry: HistoryItem = {
-            id: Date.now().toString(),
-            item: item,
-            amount: amount,
-            category: '収入',
-            date: formatDate(date),
-        };
-
-        const newHistory = [newEntry, ...history];
-        setHistory(newHistory);
-        saveData(newHistory);
-
-        setItem('');
-        setAmount('');
-        Keyboard.dismiss();
-    }, [item, amount, date, history, saveData]);
+    const addEntry = useCallback(() => addEntryWithCategory(selectedCategory), [addEntryWithCategory, selectedCategory]);
+    const addIncome = useCallback(() => addEntryWithCategory('収入'), [addEntryWithCategory]);
 
     const deleteEntry = useCallback((id: string) => {
         const newHistory = history.filter((item) => item.id !== id);
@@ -278,18 +330,21 @@ export default function App() {
         const [year, month, day] = entry.date.split('/').map(Number);
         setDate(new Date(year, month - 1, day));
         setIsEditMode(true);
-        setCurrentScreen('add');
+        // 収入は収入入力画面で編集する（支出画面だとカテゴリが支出に変わってしまうため）
+        setCurrentScreen(entry.category === '収入' ? 'income' : 'add');
     }, []);
 
-    const updateEntry = useCallback(() => {
-        if (item === '' || amount === '' || !editingId) return;
+    const updateEntry = useCallback((): boolean => {
+        if (!editingId) return false;
+        const validAmount = validateInput();
+        if (validAmount === null) return false;
 
         const updatedHistory = history.map((histItem) =>
             histItem.id === editingId
                 ? {
                     ...histItem,
-                    item: item,
-                    amount: amount,
+                    item: item.trim(),
+                    amount: validAmount,
                     category: selectedCategory,
                     date: formatDate(date),
                 }
@@ -298,15 +353,35 @@ export default function App() {
 
         setHistory(updatedHistory);
         saveData(updatedHistory);
+        resetForm();
+        return true;
+    }, [item, editingId, selectedCategory, date, history, saveData, validateInput, resetForm]);
 
-        setItem('');
-        setAmount('');
-        setSelectedCategory('食費');
-        setDate(new Date());
-        setEditingId(null);
-        setIsEditMode(false);
-        Keyboard.dismiss();
-    }, [item, amount, editingId, selectedCategory, date, history, saveData]);
+    const resetHistory = useCallback(async () => {
+        await AsyncStorage.removeItem(getHistoryKey());
+        setHistory([]);
+    }, []);
+
+    // JSONバックアップから履歴とカテゴリを復元（既存データは置き換え）
+    const restoreBackup = useCallback(async (restoredHistory: HistoryItem[], restoredCategories: string[]) => {
+        await Promise.all([
+            AsyncStorage.setItem(getHistoryKey(), JSON.stringify(restoredHistory)),
+            AsyncStorage.setItem(getCategoryKey(), JSON.stringify(restoredCategories)),
+        ]);
+        setHistory(restoredHistory);
+        setCategories(restoredCategories);
+    }, []);
+
+    const closeInput = useCallback(() => {
+        resetForm();
+        setCurrentScreen('history');
+    }, [resetForm]);
+
+    const openInput = useCallback((screen: 'add' | 'income') => {
+        resetForm();
+        setCurrentScreen(screen);
+        setIsMenuOpen(false);
+    }, [resetForm]);
 
     // FAB 用の旧処理は不要になったため削除
 
@@ -328,16 +403,14 @@ export default function App() {
                     categories={categories}
                     onAddCategory={addCategory}
                     onSave={() => {
-                        addEntry();
-                        setCurrentScreen('history');
+                        if (addEntry()) setCurrentScreen('history');
                     }}
-                    onCancel={() => setCurrentScreen('history')}
+                    onCancel={closeInput}
                     onSelectDate={(d: Date) => setDate(d)}
                     dateText={formatDate(date)}
                     isEditMode={isEditMode}
                     onUpdate={() => {
-                        updateEntry();
-                        setCurrentScreen('history');
+                        if (updateEntry()) setCurrentScreen('history');
                     }}
                     templates={templates}
                     onSelectTemplate={selectTemplate}
@@ -358,12 +431,15 @@ export default function App() {
                     amount={amount}
                     setAmount={setAmount}
                     onSave={() => {
-                        addIncome();
-                        setCurrentScreen('history');
+                        if (addIncome()) setCurrentScreen('history');
                     }}
-                    onCancel={() => setCurrentScreen('history')}
+                    onCancel={closeInput}
                     onSelectDate={(d: Date) => setDate(d)}
                     dateText={formatDate(date)}
+                    isEditMode={isEditMode}
+                    onUpdate={() => {
+                        if (updateEntry()) setCurrentScreen('history');
+                    }}
                 />
 
                 {showPicker && (
@@ -405,6 +481,17 @@ export default function App() {
             />
         );
     }
+    if (currentScreen === 'recurring') {
+        return (
+            <Recurring
+                rules={recurringRules}
+                categories={categories}
+                onAdd={addRecurringRule}
+                onDelete={deleteRecurringRule}
+                onBack={() => setCurrentScreen('history')}
+            />
+        );
+    }
     if (currentScreen === 'search') {
         return (
             <SearchFilter
@@ -420,6 +507,8 @@ export default function App() {
                 history={history}
                 categories={categories}
                 onBack={() => setCurrentScreen('history')}
+                onResetData={resetHistory}
+                onRestore={restoreBackup}
             />
         );
     }
@@ -444,9 +533,16 @@ export default function App() {
 
             {/* 総支出を目立たせて中央に表示するカード */}
             <View style={styles.monthlyTotalCard}>
-                <Text style={styles.monthlyTotalLabel}>今月の総支出</Text>
-                <Text style={styles.monthlyTotalAmount}>¥{monthlyTotal.toLocaleString()}</Text>
+                <Text style={styles.monthlyTotalLabel}>今月の収支</Text>
+                <Text style={[styles.monthlyTotalAmount, monthlyTotal < 0 && { color: '#FF3B30' }]}>
+                    {monthlyTotal < 0 ? '-' : ''}¥{Math.abs(monthlyTotal).toLocaleString()}
+                </Text>
+                <Text style={styles.monthlyBreakdown}>
+                    収入 ¥{monthlyIncome.toLocaleString()}　/　支出 ¥{monthlyExpense.toLocaleString()}
+                </Text>
             </View>
+
+            <BudgetCard budget={budget} spent={monthlyExpense} onChangeBudget={changeBudget} />
 
             {/* 2. メインエリア：グラフと履歴リスト */}
             <FlatList
@@ -464,7 +560,7 @@ export default function App() {
                                     height={160}
                                     chartConfig={{ 
                                         color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
-                                        backgroundColor: '#FFFFFF',
+                                        backgroundColor: c.card,
                                     }}
                                     accessor={"amount"}
                                     backgroundColor={"transparent"}
@@ -473,18 +569,16 @@ export default function App() {
                                 />
                             </View>
                         )}
-                        <View style={styles.categorySummaryContainer}>
-                            {categories.map((cat) => {
-                                const catTotal = getCategoryTotal(cat);
-                                if (catTotal === 0) return null;
-                                return (
-                                    <View key={cat} style={styles.categoryTotalItem}>
-                                        <Text style={styles.categoryTotalLabel}>{cat}</Text>
+                        {chartData.length > 0 && (
+                            <View style={styles.categorySummaryContainer}>
+                                {chartData.map(({ name, amount: catTotal }) => (
+                                    <View key={name} style={styles.categoryTotalItem}>
+                                        <Text style={styles.categoryTotalLabel}>{name}</Text>
                                         <Text style={styles.categoryTotalValue}>¥{catTotal.toLocaleString()}</Text>
                                     </View>
-                                );
-                            })}
-                        </View>
+                                ))}
+                            </View>
+                        )}
                     </>
                 }
                 ListEmptyComponent={
@@ -493,7 +587,7 @@ export default function App() {
                             <Text style={styles.emptyStateIcon}>📊</Text>
                             <Text style={styles.emptyStateTitle}>まだデータがありません</Text>
                             <Text style={styles.emptyStateDescription}>
-                                このの月の支出をまとめましょう
+                                この月の支出をまとめましょう
                             </Text>
                             
                             <View style={styles.guidelineContainer}>
@@ -546,7 +640,7 @@ export default function App() {
 
                             <TouchableOpacity 
                                 style={styles.emptyStateCTA}
-                                onPress={() => setCurrentScreen('add')}
+                                onPress={() => openInput('add')}
                             >
                                 <Text style={styles.emptyStateCTAText}>✍️ さっそく入力する</Text>
                             </TouchableOpacity>
@@ -568,11 +662,11 @@ export default function App() {
                         >
                             <View>
                                 <Text style={styles.listItemText}>{item.item}</Text>
-                                <Text style={{ fontSize: 12, color: '#666' }}>{item.category} | {item.date}</Text>
+                                <Text style={{ fontSize: 12, color: c.textSecondary }}>{item.category} | {item.date}</Text>
                             </View>
                             <View style={{ alignItems: 'flex-end' }}>
                                 <Text style={[styles.listItemAmount, isIncome && { color: '#34C759' }]}>{isIncome ? `¥${Number(item.amount).toLocaleString()}` : `¥${Number(item.amount).toLocaleString()}`}</Text>
-                                <Text style={{ fontSize: 10, color: '#999' }}>タップで編集・長押しで削除</Text>
+                                <Text style={{ fontSize: 10, color: c.textMuted }}>タップで編集・長押しで削除</Text>
                             </View>
                         </TouchableOpacity>
                     );
@@ -599,6 +693,17 @@ export default function App() {
                         <Text style={styles.menuLabel}>データ管理</Text>
                         <View style={[styles.miniCircle, { backgroundColor: '#00C7BE' }]}>
                             <Text style={{ color: '#fff' }}>💾</Text>
+                        </View>
+                    </TouchableOpacity>
+
+                    {/* 固定費ボタン */}
+                    <TouchableOpacity
+                        style={styles.menuItem}
+                        onPress={() => { setCurrentScreen('recurring'); setIsMenuOpen(false); }}
+                    >
+                        <Text style={styles.menuLabel}>固定費</Text>
+                        <View style={[styles.miniCircle, { backgroundColor: '#AF52DE' }]}>
+                            <Text style={{ color: '#fff' }}>🔁</Text>
                         </View>
                     </TouchableOpacity>
 
@@ -649,7 +754,7 @@ export default function App() {
                     {/* 支出入力ボタン */}
                     <TouchableOpacity
                         style={styles.menuItem}
-                        onPress={() => { setCurrentScreen('add'); setIsMenuOpen(false); }}
+                        onPress={() => openInput('add')}
                     >
                         <Text style={styles.menuLabel}>支出を入力</Text>
                         <View style={[styles.miniCircle, { backgroundColor: '#FF2D55' }]}>
@@ -660,7 +765,7 @@ export default function App() {
                     {/* 収入入力ボタン */}
                     <TouchableOpacity
                         style={styles.menuItem}
-                        onPress={() => { setCurrentScreen('income'); setIsMenuOpen(false); }}
+                        onPress={() => openInput('income')}
                     >
                         <Text style={styles.menuLabel}>収入を入力</Text>
                         <View style={[styles.miniCircle, { backgroundColor: '#34C759' }]}>
@@ -685,10 +790,10 @@ export default function App() {
     );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: AppColors) => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#f8f9fa',
+        backgroundColor: c.background,
         // ページはグローバルヘッダーを持つため、上部の余白は小さめに調整
         paddingTop: Platform.OS === 'web' ? 10 : (Platform.OS === 'ios' ? 12 : 8),
     },
@@ -700,12 +805,12 @@ const styles = StyleSheet.create({
         right: 0,
         height: 36,
         zIndex: 9999,
-        backgroundColor: '#F8F9FA',
+        backgroundColor: c.background,
         justifyContent: 'center',
         paddingLeft: 12,
     },
     topLeftLabelText: {
-        color: '#5B4FA3',
+        color: c.primaryText,
         fontWeight: '700',
         fontSize: 14,
     },
@@ -714,7 +819,7 @@ const styles = StyleSheet.create({
         marginBottom: 10,
         paddingBottom: 8,
         borderBottomWidth: 1,
-        borderBottomColor: '#E0E0E0',
+        borderBottomColor: c.border,
     },
     headerTop: { 
         flexDirection: 'row', 
@@ -722,7 +827,7 @@ const styles = StyleSheet.create({
         alignItems: 'center', 
         marginBottom: 6 
     },
-    title: { fontSize: 20, fontWeight: '600', textAlign: 'center', color: '#1A1A1A' },
+    title: { fontSize: 20, fontWeight: '600', textAlign: 'center', color: c.text },
     userBadge: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -749,7 +854,7 @@ const styles = StyleSheet.create({
         marginRight: 2,
     },
     userChangeIcon: {
-        color: '#5B4FA3',
+        color: c.primaryText,
         fontSize: 16,
     },
     monthNav: { 
@@ -762,12 +867,12 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         paddingVertical: 6,
         paddingHorizontal: 12,
-        backgroundColor: '#FFFFFF',
+        backgroundColor: c.card,
         borderRadius: 10,
         minWidth: 110,
         elevation: 1,
         borderWidth: 1,
-        borderColor: '#F0F0F0',
+        borderColor: c.border,
         alignSelf: 'center',
         marginHorizontal: 8,
     },
@@ -779,29 +884,29 @@ const styles = StyleSheet.create({
     },
     monthNavBtnText: {
         fontSize: 22,
-        color: '#5B4FA3',
+        color: c.primaryText,
         fontWeight: '700',
     },
     monthYear: {
         fontSize: 9,
-        color: '#B0B0B0',
+        color: c.textMuted,
         fontWeight: '600',
         letterSpacing: 0.2,
     },
     monthText: { 
         fontSize: 18, 
         fontWeight: '700',
-        color: '#5B4FA3',
+        color: c.primaryText,
         marginTop: 0,
     },
     monthTotal: {
         fontSize: 12,
-        color: '#666666',
+        color: c.textSecondary,
         marginTop: 4,
         fontWeight: '600',
     },
     monthlyTotalCard: {
-        backgroundColor: '#FFFFFF',
+        backgroundColor: c.card,
         marginHorizontal: 16, // match chartCardContainer
         marginTop: 8,
         marginBottom: 12, // add spacing between total card and chart
@@ -812,17 +917,23 @@ const styles = StyleSheet.create({
     },
     monthlyTotalLabel: {
         fontSize: 12,
-        color: '#999999',
+        color: c.textMuted,
         marginBottom: 6,
         fontWeight: '600',
     },
     monthlyTotalAmount: {
         fontSize: 22,
-        color: '#5B4FA3',
+        color: c.primaryText,
         fontWeight: '800',
     },
-    navText: { 
-        color: '#5B4FA3', 
+    monthlyBreakdown: {
+        fontSize: 12,
+        color: c.textSecondary,
+        marginTop: 6,
+        fontWeight: '600',
+    },
+    navText: {
+        color: c.primaryText, 
         fontWeight: '600',
         fontSize: 12
     },
@@ -830,12 +941,12 @@ const styles = StyleSheet.create({
         fontSize: 16, 
         fontWeight: '700', 
         textAlign: 'right', 
-        color: '#5B4FA3',
+        color: c.primaryText,
         marginTop: 2
     },
 
     listItem: {
-        backgroundColor: '#FFFFFF',
+        backgroundColor: c.card,
         padding: 16,
         marginHorizontal: 16,
         marginBottom: 12,
@@ -854,16 +965,16 @@ const styles = StyleSheet.create({
     listItemText: { 
         fontSize: 16, 
         fontWeight: '600',
-        color: '#1A1A1A'
+        color: c.text
     },
     listItemAmount: { 
         fontSize: 16, 
         fontWeight: '700', 
-        color: '#5B4FA3' 
+        color: c.primaryText 
     },
 
     footerInput: {
-        backgroundColor: '#FFFFFF',
+        backgroundColor: c.card,
         padding: 20,
         borderTopLeftRadius: 20,
         borderTopRightRadius: 20,
@@ -873,12 +984,12 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.1,
     },
     input: { 
-        backgroundColor: '#F8F9FA', 
+        backgroundColor: c.background, 
         padding: 12, 
         borderRadius: 8, 
         borderWidth: 1, 
-        borderColor: '#E0E0E0',
-        color: '#1A1A1A'
+        borderColor: c.border,
+        color: c.text
     },
     categorySelectRow: { 
         flexDirection: 'row', 
@@ -889,11 +1000,11 @@ const styles = StyleSheet.create({
     catBtn: { 
         padding: 8, 
         borderRadius: 18, 
-        backgroundColor: '#F0F0F0', 
+        backgroundColor: c.chip, 
         minWidth: 60, 
         alignItems: 'center',
         borderWidth: 1,
-        borderColor: '#E0E0E0'
+        borderColor: c.border
     },
     catBtnActive: { 
         backgroundColor: '#5B4FA3',
@@ -901,7 +1012,7 @@ const styles = StyleSheet.create({
     },
     catBtnText: { 
         fontSize: 12, 
-        color: '#666666',
+        color: c.textSecondary,
         fontWeight: '500'
     },
     catBtnTextActive: { 
@@ -910,7 +1021,7 @@ const styles = StyleSheet.create({
     },
     dateBtn: { 
         padding: 8, 
-        backgroundColor: '#F0F0F0', 
+        backgroundColor: c.chip, 
         borderRadius: 8 
     },
     addButton: { 
@@ -931,7 +1042,7 @@ const styles = StyleSheet.create({
         flexWrap: 'wrap', 
         justifyContent: 'space-between', 
         marginHorizontal: 16, 
-        backgroundColor: '#FFFFFF', 
+        backgroundColor: c.card, 
         padding: 14, 
         borderRadius: 12, 
         marginBottom: 16,
@@ -946,13 +1057,13 @@ const styles = StyleSheet.create({
     },
     categoryTotalLabel: { 
         fontSize: 12, 
-        color: '#666666',
+        color: c.textSecondary,
         fontWeight: '500'
     },
     categoryTotalValue: { 
         fontSize: 13, 
         fontWeight: '700',
-        color: '#5B4FA3'
+        color: c.primaryText
     },
     floatingButton: {
         position: 'absolute',
@@ -989,16 +1100,17 @@ const styles = StyleSheet.create({
     menuItem: {
         flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: 20,
+        marginBottom: 12,
     },
     menuLabel: {
-        backgroundColor: '#FFFFFF',
+        backgroundColor: c.card,
         paddingHorizontal: 14,
         paddingVertical: 8,
         borderRadius: 10,
         marginRight: 15,
         fontSize: 14,
         fontWeight: '600',
+        color: c.text,
         elevation: 5,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
@@ -1006,9 +1118,9 @@ const styles = StyleSheet.create({
         shadowRadius: 3,
     },
     miniCircle: {
-        width: 56,
-        height: 56,
-        borderRadius: 28,
+        width: 48,
+        height: 48,
+        borderRadius: 24,
         justifyContent: 'center',
         alignItems: 'center',
         elevation: 5,
@@ -1036,20 +1148,20 @@ const styles = StyleSheet.create({
     emptyStateTitle: {
         fontSize: 22,
         fontWeight: '700',
-        color: '#1A1A1A',
+        color: c.text,
         marginBottom: 8,
         textAlign: 'center',
     },
     emptyStateDescription: {
         fontSize: 14,
-        color: '#B0B0B0',
+        color: c.textMuted,
         marginBottom: 32,
         textAlign: 'center',
         fontWeight: '500',
     },
     guidelineContainer: {
         width: '100%',
-        backgroundColor: '#FFFFFF',
+        backgroundColor: c.card,
         borderRadius: 16,
         padding: 20,
         marginBottom: 24,
@@ -1086,18 +1198,18 @@ const styles = StyleSheet.create({
     guidelineTitle: {
         fontSize: 14,
         fontWeight: '700',
-        color: '#1A1A1A',
+        color: c.text,
         marginBottom: 2,
     },
     guidelineDesc: {
         fontSize: 12,
-        color: '#B0B0B0',
+        color: c.textMuted,
         fontWeight: '500',
     },
     guidelineConnector: {
         width: 2,
         height: 16,
-        backgroundColor: '#E0E0E0',
+        backgroundColor: c.chip,
         marginLeft: 17,
         marginVertical: 0,
     },
@@ -1120,7 +1232,7 @@ const styles = StyleSheet.create({
     chartCardContainer: {
         marginHorizontal: 16,
         marginBottom: 16,
-        backgroundColor: '#FFFFFF',
+        backgroundColor: c.card,
         borderRadius: 16,
         padding: 18,
         elevation: 3,
@@ -1134,7 +1246,7 @@ const styles = StyleSheet.create({
     chartCardTitle: {
         fontSize: 15,
         fontWeight: '700',
-        color: '#1A1A1A',
+        color: c.text,
         marginBottom: 12,
     },
     // styles for native-like header placeholder shown on mobile when native header is hidden

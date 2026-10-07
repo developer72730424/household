@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
+import { AppColors, useAppColors } from '@/hooks/use-app-colors';
 import { Alert, FlatList, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 interface Props {
@@ -9,6 +10,8 @@ interface Props {
 }
 
 export default function CategorySettings({ categories, onAdd, onDelete, onBack }: Props) {
+    const c = useAppColors();
+    const styles = useMemo(() => createStyles(c), [c]);
     const [newCat, setNewCat] = useState('');
 
     const confirmDelete = (name: string) => {
@@ -45,7 +48,7 @@ export default function CategorySettings({ categories, onAdd, onDelete, onBack }
                 keyExtractor={item => item}
                 renderItem={({ item }) => (
                     <View style={styles.listItem}>
-                        <Text>{item}</Text>
+                        <Text style={{ color: c.text }}>{item}</Text>
                         <TouchableOpacity onPress={() => confirmDelete(item)}>
                             <Text style={{ color: 'red' }}>削除</Text>
                         </TouchableOpacity>
@@ -56,34 +59,34 @@ export default function CategorySettings({ categories, onAdd, onDelete, onBack }
     );
 }
 
-const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: '#F8F9FA', paddingTop: Platform.OS === 'web' ? 10 : (Platform.OS === 'ios' ? 12 : 8) },
+const createStyles = (c: AppColors) => StyleSheet.create({
+    container: { flex: 1, backgroundColor: c.background, paddingTop: Platform.OS === 'web' ? 10 : (Platform.OS === 'ios' ? 12 : 8) },
     header: { 
         flexDirection: 'row', 
         justifyContent: 'space-between', 
         padding: 16, 
         alignItems: 'center',
-        backgroundColor: '#FFFFFF',
+        backgroundColor: c.card,
         borderBottomWidth: 1,
-        borderBottomColor: '#E0E0E0',
+        borderBottomColor: c.border,
     },
-    backText: { color: '#5B4FA3', fontSize: 16, fontWeight: '600' },
-    title: { fontSize: 20, fontWeight: '700', color: '#1A1A1A' },
+    backText: { color: c.primaryText, fontSize: 16, fontWeight: '600' },
+    title: { fontSize: 20, fontWeight: '700', color: c.text },
     inputArea: { 
         flexDirection: 'row', 
         padding: 16, 
         gap: 12,
-        backgroundColor: '#FFFFFF',
+        backgroundColor: c.card,
         marginBottom: 12,
     },
     input: { 
         flex: 1, 
-        backgroundColor: '#F8F9FA', 
+        backgroundColor: c.background, 
         padding: 12, 
         borderRadius: 10, 
         borderWidth: 1, 
-        borderColor: '#E0E0E0',
-        color: '#1A1A1A'
+        borderColor: c.border,
+        color: c.text
     },
     addBtn: { 
         backgroundColor: '#34C759', 
@@ -96,9 +99,9 @@ const styles = StyleSheet.create({
         flexDirection: 'row', 
         justifyContent: 'space-between', 
         padding: 16, 
-        backgroundColor: '#FFFFFF', 
+        backgroundColor: c.card, 
         borderBottomWidth: 1, 
-        borderBottomColor: '#E0E0E0',
+        borderBottomColor: c.border,
         marginHorizontal: 12,
         marginVertical: 6,
         borderRadius: 10,

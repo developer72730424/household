@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { Keyboard, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { AppColors, useAppColors } from '@/hooks/use-app-colors';
+import { Keyboard, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import type { Template } from './Templates';
 
 
@@ -30,6 +31,9 @@ export default function InputItem({
     categories, onAddCategory, onSave, onCancel, onSelectDate, dateText,
     isEditMode = false, onUpdate, templates = [], onSelectTemplate
 }: InputItemProps) {
+    const c = useAppColors();
+    const styles = useMemo(() => createStyles(c), [c]);
+    const modalStyles = useMemo(() => createModalStyles(c), [c]);
     // ローカルな UI state
     const [modalVisible, setModalVisible] = useState(false);
 
@@ -75,8 +79,14 @@ export default function InputItem({
 
     // ローカルな UI state
     return (
-        <View style={styles.fullScreenContainer}>
-            <ScrollView showsVerticalScrollIndicator={false} style={styles.scrollContent}>
+        // 数値キーボードには閉じるボタンが無いため、キーボード分だけ持ち上げて保存ボタンを隠さないようにする
+        <KeyboardAvoidingView style={styles.fullScreenContainer} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+            <ScrollView
+                showsVerticalScrollIndicator={false}
+                style={styles.scrollContent}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="on-drag"
+            >
                 <Text style={styles.screenTitle}>{isEditMode ? '支出を編集' : '支出を入力'}</Text>
 
                 <View style={styles.inputCard}>
@@ -107,22 +117,22 @@ export default function InputItem({
                                 onPress={() => setSelectedCategory(cat)}
                                 style={[styles.catBtn, selectedCategory === cat && styles.catBtnActive]}
                             >
-                                <Text style={selectedCategory === cat ? { color: '#fff', fontWeight: '600', fontSize: 13 } : { color: '#666666', fontWeight: '500', fontSize: 13 }}>{cat}</Text>
+                                <Text style={selectedCategory === cat ? { color: '#fff', fontWeight: '600', fontSize: 13 } : { color: c.textSecondary, fontWeight: '500', fontSize: 13 }}>{cat}</Text>
                             </TouchableOpacity>
                         ))}
                     </View>
 
                     <TouchableOpacity style={styles.dateSelector} onPress={() => setModalVisible(true)}>
-                        <Text style={{ color: '#1A1A1A', fontWeight: '500' }}>📅 日付：{dateText}</Text>
+                        <Text style={{ color: c.text, fontWeight: '500' }}>📅 日付：{dateText}</Text>
                     </TouchableOpacity>
 
                     <Modal visible={modalVisible} transparent animationType="slide">
                         <View style={modalStyles.overlay}>
                             <View style={modalStyles.container}>
                                 <View style={modalStyles.header}>
-                                    <TouchableOpacity onPress={goPrevMonth} style={modalStyles.navBtn}><Text>‹</Text></TouchableOpacity>
+                                    <TouchableOpacity onPress={goPrevMonth} style={modalStyles.navBtn}><Text style={{ color: c.text }}>‹</Text></TouchableOpacity>
                                     <Text style={modalStyles.headerTitle}>{calendarMonth.getFullYear()}年 {calendarMonth.getMonth() + 1}月</Text>
-                                    <TouchableOpacity onPress={goNextMonth} style={modalStyles.navBtn}><Text>›</Text></TouchableOpacity>
+                                    <TouchableOpacity onPress={goNextMonth} style={modalStyles.navBtn}><Text style={{ color: c.text }}>›</Text></TouchableOpacity>
                                 </View>
 
                                 <View style={modalStyles.weekdaysRow}>
@@ -192,14 +202,14 @@ export default function InputItem({
                     <Text style={styles.cancelButtonText}>キャンセル</Text>
                 </TouchableOpacity>
             </View>
-        </View>
+        </KeyboardAvoidingView>
     );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: AppColors) => StyleSheet.create({
     fullScreenContainer: { 
         flex: 1, 
-        backgroundColor: '#F8F9FA', 
+        backgroundColor: c.background, 
         display: 'flex',
         flexDirection: 'column',
     },
@@ -212,10 +222,10 @@ const styles = StyleSheet.create({
         fontWeight: '700', 
         marginBottom: 20, 
         textAlign: 'center',
-        color: '#1A1A1A'
+        color: c.text
     },
     inputCard: { 
-        backgroundColor: '#FFFFFF', 
+        backgroundColor: c.card, 
         padding: 24, 
         borderRadius: 16,
         elevation: 4,
@@ -226,19 +236,19 @@ const styles = StyleSheet.create({
     },
     label: { 
         fontSize: 15, 
-        color: '#666666', 
+        color: c.textSecondary, 
         marginBottom: 8, 
         marginTop: 14,
         fontWeight: '600'
     },
     input: { 
-        backgroundColor: '#F8F9FA', 
+        backgroundColor: c.background, 
         padding: 14, 
         borderRadius: 10, 
         borderWidth: 1, 
-        borderColor: '#E0E0E0',
+        borderColor: c.border,
         marginBottom: 12,
-        color: '#1A1A1A',
+        color: c.text,
         fontSize: 15
     },
     categoryRow: { 
@@ -250,9 +260,9 @@ const styles = StyleSheet.create({
     catBtn: { 
         padding: 12, 
         borderRadius: 20, 
-        backgroundColor: '#F0F0F0',
+        backgroundColor: c.chip,
         borderWidth: 1,
-        borderColor: '#E0E0E0'
+        borderColor: c.border
     },
     catBtnActive: { 
         backgroundColor: '#5B4FA3',
@@ -260,12 +270,12 @@ const styles = StyleSheet.create({
     },
     dateSelector: { 
         padding: 16, 
-        backgroundColor: '#F8F9FA', 
+        backgroundColor: c.background, 
         borderRadius: 10, 
         marginTop: 12,
         borderWidth: 1,
-        borderColor: '#E0E0E0',
-        color: '#1A1A1A',
+        borderColor: c.border,
+        color: c.text,
         fontSize: 15,
         fontWeight: '500'
     },
@@ -294,12 +304,12 @@ const styles = StyleSheet.create({
     },
     smallInput: {
         flex: 1,
-        backgroundColor: '#F8F9FA',
+        backgroundColor: c.background,
         padding: 12,
         borderRadius: 8,
         borderWidth: 1,
-        borderColor: '#E0E0E0',
-        color: '#1A1A1A'
+        borderColor: c.border,
+        color: c.text
     },
     miniAddBtn: {
         backgroundColor: '#34C759',
@@ -315,7 +325,7 @@ const styles = StyleSheet.create({
     },
     templateQuick: {
         flex: 1,
-        backgroundColor: '#F0F8FF',
+        backgroundColor: c.tintBg,
         padding: 12,
         borderRadius: 10,
         borderWidth: 1,
@@ -325,39 +335,39 @@ const styles = StyleSheet.create({
     },
     templateQuickText: {
         fontSize: 13,
-        color: '#5B4FA3',
+        color: c.primaryText,
         fontWeight: '700',
         marginBottom: 6,
     },
     templateQuickAmount: {
         fontSize: 14,
-        color: '#5B4FA3',
+        color: c.primaryText,
         fontWeight: '700',
     },
     buttonContainer: {
         paddingHorizontal: 16,
         paddingVertical: 16,
-        backgroundColor: '#FFFFFF',
+        backgroundColor: c.card,
         borderTopWidth: 1,
-        borderTopColor: '#E0E0E0',
+        borderTopColor: c.border,
     },
     cancelButton: {
-        backgroundColor: '#F5F5F5',
+        backgroundColor: c.chip,
         padding: 14,
         borderRadius: 10,
         marginTop: 10,
         alignItems: 'center',
         borderWidth: 1.5,
-        borderColor: '#E0E0E0',
+        borderColor: c.border,
     },
     cancelButtonText: {
-        color: '#666666',
+        color: c.textSecondary,
         fontSize: 15,
         fontWeight: '600',
     },
 });
 
-const modalStyles = StyleSheet.create({
+const createModalStyles = (c: AppColors) => StyleSheet.create({
     overlay: {
         flex: 1,
         backgroundColor: 'rgba(0,0,0,0.4)',
@@ -368,7 +378,7 @@ const modalStyles = StyleSheet.create({
     container: {
         width: '100%',
         maxWidth: 520,
-        backgroundColor: '#fff',
+        backgroundColor: c.card,
         borderRadius: 12,
         padding: 12,
     },
@@ -384,7 +394,7 @@ const modalStyles = StyleSheet.create({
     headerTitle: {
         fontSize: 16,
         fontWeight: '700',
-        color: '#1A1A1A',
+        color: c.text,
     },
     weekdaysRow: {
         flexDirection: 'row',
@@ -394,7 +404,7 @@ const modalStyles = StyleSheet.create({
     weekday: {
         width: 36,
         textAlign: 'center',
-        color: '#888',
+        color: c.textMuted,
         fontWeight: '700',
     },
     weekRow: {
@@ -413,7 +423,7 @@ const modalStyles = StyleSheet.create({
         backgroundColor: '#5B4FA3',
     },
     dayText: {
-        color: '#222',
+        color: c.text,
     },
     dayTextSelected: {
         color: '#fff',
@@ -428,7 +438,7 @@ const modalStyles = StyleSheet.create({
         paddingVertical: 8,
     },
     footerBtnText: {
-        color: '#5B4FA3',
+        color: c.primaryText,
         fontWeight: '700',
     }
 });

@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
-import { Keyboard, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { AppColors, useAppColors } from '@/hooks/use-app-colors';
+import { Keyboard, KeyboardAvoidingView, Modal, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 interface InputIncomeProps {
     item: string;
@@ -10,9 +11,14 @@ interface InputIncomeProps {
     onCancel: () => void;
     onSelectDate?: (d: Date) => void;
     dateText: string;
+    isEditMode?: boolean;
+    onUpdate?: () => void;
 }
 
-export default function InputIncome({ item, setItem, amount, setAmount, onSave, onCancel, onSelectDate, dateText }: InputIncomeProps) {
+export default function InputIncome({ item, setItem, amount, setAmount, onSave, onCancel, onSelectDate, dateText, isEditMode = false, onUpdate }: InputIncomeProps) {
+    const c = useAppColors();
+    const styles = useMemo(() => createStyles(c), [c]);
+    const modalStyles = useMemo(() => createModalStyles(c), [c]);
     const [modalVisible, setModalVisible] = useState(false);
 
     const parsedDate = useMemo(() => {
@@ -51,9 +57,15 @@ export default function InputIncome({ item, setItem, amount, setAmount, onSave, 
     };
 
     return (
-        <View style={styles.fullScreenContainer}>
-            <ScrollView showsVerticalScrollIndicator={false} style={styles.scrollContent}>
-                <Text style={styles.screenTitle}>収入を入力</Text>
+        // 数値キーボードには閉じるボタンが無いため、キーボード分だけ持ち上げて保存ボタンを隠さないようにする
+        <KeyboardAvoidingView style={styles.fullScreenContainer} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+            <ScrollView
+                showsVerticalScrollIndicator={false}
+                style={styles.scrollContent}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="on-drag"
+            >
+                <Text style={styles.screenTitle}>{isEditMode ? '収入を編集' : '収入を入力'}</Text>
 
                 <View style={styles.inputCard}>
                     <Text style={styles.label}>収入元</Text>
@@ -76,16 +88,16 @@ export default function InputIncome({ item, setItem, amount, setAmount, onSave, 
                     />
 
                     <TouchableOpacity style={styles.dateSelector} onPress={() => setModalVisible(true)}>
-                        <Text style={{ color: '#1A1A1A', fontWeight: '500' }}>📅 日付：{dateText}</Text>
+                        <Text style={{ color: c.text, fontWeight: '500' }}>📅 日付：{dateText}</Text>
                     </TouchableOpacity>
 
                     <Modal visible={modalVisible} transparent animationType="slide">
                         <View style={modalStyles.overlay}>
                             <View style={modalStyles.container}>
                                 <View style={modalStyles.header}>
-                                    <TouchableOpacity onPress={goPrevMonth} style={modalStyles.navBtn}><Text>‹</Text></TouchableOpacity>
+                                    <TouchableOpacity onPress={goPrevMonth} style={modalStyles.navBtn}><Text style={{ color: c.text }}>‹</Text></TouchableOpacity>
                                     <Text style={modalStyles.headerTitle}>{calendarMonth.getFullYear()}年 {calendarMonth.getMonth() + 1}月</Text>
-                                    <TouchableOpacity onPress={goNextMonth} style={modalStyles.navBtn}><Text>›</Text></TouchableOpacity>
+                                    <TouchableOpacity onPress={goNextMonth} style={modalStyles.navBtn}><Text style={{ color: c.text }}>›</Text></TouchableOpacity>
                                 </View>
 
                                 <View style={modalStyles.weekdaysRow}>
@@ -124,50 +136,50 @@ export default function InputIncome({ item, setItem, amount, setAmount, onSave, 
             </ScrollView>
 
             <View style={styles.buttonContainer}>
-                <TouchableOpacity style={styles.mainAddButton} onPress={onSave}>
-                    <Text style={styles.mainAddButtonText}>保存して戻る</Text>
+                <TouchableOpacity style={styles.mainAddButton} onPress={isEditMode ? onUpdate : onSave}>
+                    <Text style={styles.mainAddButtonText}>{isEditMode ? '更新して戻る' : '保存して戻る'}</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity onPress={onCancel} style={styles.cancelButton}>
                     <Text style={styles.cancelButtonText}>キャンセル</Text>
                 </TouchableOpacity>
             </View>
-        </View>
+        </KeyboardAvoidingView>
     );
 }
 
-const styles = StyleSheet.create({
+const createStyles = (c: AppColors) => StyleSheet.create({
     fullScreenContainer: { 
         flex: 1, 
-        backgroundColor: '#F8F9FA', 
+        backgroundColor: c.background, 
         display: 'flex',
         flexDirection: 'column',
     },
     scrollContent: { flex: 1, padding: 16 },
-    screenTitle: { fontSize: 24, fontWeight: '700', marginBottom: 20, textAlign: 'center', color: '#1A1A1A' },
-    inputCard: { backgroundColor: '#FFFFFF', padding: 24, borderRadius: 16, elevation: 4, shadowColor: '#5B4FA3', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8 },
-    label: { fontSize: 15, color: '#666666', marginBottom: 8, marginTop: 14, fontWeight: '600' },
-    input: { backgroundColor: '#F8F9FA', padding: 14, borderRadius: 10, borderWidth: 1, borderColor: '#E0E0E0', marginBottom: 12, color: '#1A1A1A', fontSize: 15 },
-    dateSelector: { padding: 16, backgroundColor: '#F8F9FA', borderRadius: 10, marginTop: 12, borderWidth: 1, borderColor: '#E0E0E0' },
+    screenTitle: { fontSize: 24, fontWeight: '700', marginBottom: 20, textAlign: 'center', color: c.text },
+    inputCard: { backgroundColor: c.card, padding: 24, borderRadius: 16, elevation: 4, shadowColor: '#5B4FA3', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8 },
+    label: { fontSize: 15, color: c.textSecondary, marginBottom: 8, marginTop: 14, fontWeight: '600' },
+    input: { backgroundColor: c.background, padding: 14, borderRadius: 10, borderWidth: 1, borderColor: c.border, marginBottom: 12, color: c.text, fontSize: 15 },
+    dateSelector: { padding: 16, backgroundColor: c.background, borderRadius: 10, marginTop: 12, borderWidth: 1, borderColor: c.border },
     mainAddButton: { backgroundColor: '#34C759', padding: 18, borderRadius: 12, marginTop: 32, alignItems: 'center' },
     mainAddButtonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
-    buttonContainer: { paddingHorizontal: 16, paddingVertical: 16, backgroundColor: '#FFFFFF', borderTopWidth: 1, borderTopColor: '#E0E0E0' },
-    cancelButton: { backgroundColor: '#F5F5F5', padding: 14, borderRadius: 10, marginTop: 10, alignItems: 'center', borderWidth: 1.5, borderColor: '#E0E0E0' },
-    cancelButtonText: { color: '#666666', fontSize: 15, fontWeight: '600' },
+    buttonContainer: { paddingHorizontal: 16, paddingVertical: 16, backgroundColor: c.card, borderTopWidth: 1, borderTopColor: c.border },
+    cancelButton: { backgroundColor: c.chip, padding: 14, borderRadius: 10, marginTop: 10, alignItems: 'center', borderWidth: 1.5, borderColor: c.border },
+    cancelButtonText: { color: c.textSecondary, fontSize: 15, fontWeight: '600' },
 });
 
-const modalStyles = StyleSheet.create({
+const createModalStyles = (c: AppColors) => StyleSheet.create({
     overlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', justifyContent: 'center', alignItems: 'center', padding: 20 },
-    container: { width: '100%', maxWidth: 520, backgroundColor: '#fff', borderRadius: 12, padding: 12 },
+    container: { width: '100%', maxWidth: 520, backgroundColor: c.card, borderRadius: 12, padding: 12 },
     header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8 },
     navBtn: { padding: 8 },
-    headerTitle: { fontSize: 16, fontWeight: '700', color: '#1A1A1A' },
+    headerTitle: { fontSize: 16, fontWeight: '700', color: c.text },
     weekdaysRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 },
-    weekday: { width: 36, textAlign: 'center', color: '#888', fontWeight: '700' },
+    weekday: { width: 36, textAlign: 'center', color: c.textMuted, fontWeight: '700' },
     weekRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6 },
     dayCell: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
     dayCellSelected: { backgroundColor: '#34C759' },
-    dayText: { color: '#222' },
+    dayText: { color: c.text },
     dayTextSelected: { color: '#fff', fontWeight: '700' },
     footerRow: { marginTop: 8, alignItems: 'flex-end' },
     footerBtn: { paddingHorizontal: 12, paddingVertical: 8 },
