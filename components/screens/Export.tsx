@@ -1,8 +1,12 @@
+import * as DocumentPicker from 'expo-document-picker';
+import { File, Paths } from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
 import React, { useMemo, useState } from 'react';
 import { Alert, Platform, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 import { AppColors, useAppColors } from '@/hooks/use-app-colors';
 import { buildBackup, parseBackup, type AppSnapshot, type ParsedBackup } from '@/utils/backup';
+import { backupFileName, checkPickedFile } from '@/utils/backup-file';
 import { expenseByCategory, formatDisplayDate, sortEntries, summarize, type Entry } from '@/utils/entries';
 
 interface ExportProps {
@@ -93,9 +97,59 @@ export default function Export({ entries, categories, lastBackupAt, getSnapshot,
         }
     };
 
+    // ファイルとして書き出して共有シートに渡す（「ファイルに保存」やiCloud Driveなどへ保存できる）。
+    // 共有を完了したときだけ「最終バックアップ」を更新する
+    const saveBackupFile = async () => {
+        try {
+            setIsExporting(true);
+            const file = new File(Paths.cache, backupFileName());
+            file.create({ overwrite: true });
+            file.write(generateJSON());
+            if (!(await Sharing.isAvailableAsync())) {
+                Alert.alert('保存できません', 'この端末ではファイルの共有を利用できません。「共有・保存」からテキストで保存してください。');
+                return;
+            }
+            await Sharing.shareAsync(file.uri, {
+                mimeType: 'application/json',
+                UTI: 'public.json',
+                dialogTitle: '家計簿のバックアップを保存',
+            });
+            // shareAsync は共有を完了したかを返さないため、シートを閉じた時点で「作成した」とみなす
+            onBackedUp();
+        } catch (error) {
+            Alert.alert('エラー', 'ファイルの保存に失敗しました');
+            console.error(error);
+        } finally {
+            setIsExporting(false);
+        }
+    };
+
+    // ファイルを選んで中身を検査し、確認ダイアログへ進む
+    const pickBackupFile = async () => {
+        try {
+            const result = await DocumentPicker.getDocumentAsync({
+                type: ['application/json', 'text/plain', 'public.json'],
+                copyToCacheDirectory: true,
+                multiple: false,
+            });
+            if (result.canceled || result.assets.length === 0) return;
+            const picked = result.assets[0];
+            const check = checkPickedFile(picked);
+            if (!check.ok) {
+                Alert.alert('復元エラー', check.message);
+                return;
+            }
+            const text = await new File(picked.uri).text();
+            confirmRestore(text);
+        } catch (error) {
+            Alert.alert('エラー', 'ファイルを読み込めませんでした');
+            console.error(error);
+        }
+    };
+
     // JSONバックアップを検証して復元
-    const restoreFromJSON = () => {
-        const parsed = parseBackup(restoreText);
+    const confirmRestore = (text: string) => {
+        const parsed = parseBackup(text);
         if (!parsed.ok) {
             Alert.alert('復元エラー', parsed.error);
             return;
@@ -122,6 +176,8 @@ export default function Export({ entries, categories, lastBackupAt, getSnapshot,
             ],
         );
     };
+
+    const restoreFromJSON = () => confirmRestore(restoreText);
 
     // データをリセット
     const resetData = () => {
@@ -209,10 +265,17 @@ export default function Export({ entries, categories, lastBackupAt, getSnapshot,
                         <View style={styles.exportButtons}>
                             <TouchableOpacity
                                 style={[styles.exportBtn, styles.exportBtnPrimary]}
+                                onPress={saveBackupFile}
+                                disabled={isExporting || entries.length === 0}
+                            >
+                                <Text style={styles.exportBtnText}>💾 ファイルに保存</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.exportBtn, styles.exportBtnSecondary]}
                                 onPress={() => shareData('json')}
                                 disabled={isExporting || entries.length === 0}
                             >
-                                <Text style={styles.exportBtnText}>📤 共有・保存</Text>
+                                <Text style={styles.exportBtnText2}>📤 テキストで共有</Text>
                             </TouchableOpacity>
                         </View>
                     </View>
@@ -239,7 +302,14 @@ export default function Export({ entries, categories, lastBackupAt, getSnapshot,
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>📥 バックアップから復元</Text>
                     <View style={styles.exportCard}>
-                        <Text style={styles.exportDesc}>JSON形式で共有したバックアップを貼り付けてください</Text>
+                        <Text style={styles.exportDesc}>「ファイルに保存」で作ったバックアップを選んでください</Text>
+                        <TouchableOpacity
+                            style={[styles.exportBtn, styles.exportBtnPrimary, { marginTop: 10 }]}
+                            onPress={pickBackupFile}
+                        >
+                            <Text style={styles.exportBtnText}>📂 ファイルから復元</Text>
+                        </TouchableOpacity>
+                        <Text style={[styles.exportDesc, { marginTop: 16 }]}>テキストで保存したバックアップは、こちらに貼り付けて復元できます</Text>
                         <TextInput
                             style={styles.restoreInput}
                             multiline
@@ -284,7 +354,7 @@ export default function Export({ entries, categories, lastBackupAt, getSnapshot,
                         • CSV形式: 共有メニューからメモやファイルに保存し、ExcelやGoogle Sheetsで分析できます
                     </Text>
                     <Text style={styles.infoText}>
-                        • JSON形式: 完全なバックアップです。保存した内容を「バックアップから復元」に貼り付けると元に戻せます
+                        • JSON形式: 完全なバックアップです。「ファイルに保存」で作ったファイルを、機種変更後などに「ファイルから復元」で元に戻せます（iCloud Drive に保存すれば、別の端末からも選べます）
                     </Text>
                     <Text style={styles.infoText}>
                         • テキストレポート: 共有メニューからメールやメモアプリに送れます
