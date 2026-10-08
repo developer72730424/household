@@ -3,6 +3,11 @@
 
 export type EntryType = 'income' | 'expense';
 
+// 支払い方法（支出のみ。未指定は undefined）
+export const PAYMENT_METHODS = ['現金', 'カード', '電子マネー', 'その他'] as const;
+export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
+export const MEMO_MAX_LENGTH = 200;
+
 export interface Entry {
     id: string;
     item: string;
@@ -10,6 +15,9 @@ export interface Entry {
     category: string;    // 支出のカテゴリ。収入は INCOME_LABEL 固定
     type: EntryType;
     date: string;        // "YYYY-MM-DD"（ゼロ埋め。文字列のまま大小比較できる）
+    memo?: string;       // 自由なメモ（任意）
+    payment?: PaymentMethod; // 支払い方法（支出のみ・任意）
+    photo?: string;      // レシート写真のファイル名（任意。写真本体は端末内に保存し、バックアップには含まれない）
 }
 
 export interface Template {
@@ -121,7 +129,7 @@ export function normalizeEntry(raw: unknown): Entry | null {
     if (typeof r.id === 'string' && r.id) id = r.id;
     else if (typeof r.id === 'number') id = String(r.id);
 
-    return {
+    const entry: Entry = {
         id: id || newEntryId(),
         item: typeof r.item === 'string' ? r.item.trim() : String(r.item ?? ''),
         amount: Math.round(Math.abs(amt)),
@@ -129,6 +137,12 @@ export function normalizeEntry(raw: unknown): Entry | null {
         type,
         date,
     };
+    const memo = typeof r.memo === 'string' ? r.memo.trim().slice(0, MEMO_MAX_LENGTH) : '';
+    if (memo) entry.memo = memo;
+    if (type === 'expense' && (PAYMENT_METHODS as readonly string[]).includes(r.payment as string)) entry.payment = r.payment as PaymentMethod;
+    // ファイル名だけを受け付ける（パスの区切りを含むものは、別の場所を指してしまうので捨てる）
+    if (typeof r.photo === 'string' && /^[\w.-]+$/.test(r.photo)) entry.photo = r.photo;
+    return entry;
 }
 
 export function normalizeEntries(raw: unknown): { entries: Entry[]; skipped: number } {

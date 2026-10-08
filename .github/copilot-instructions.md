@@ -37,6 +37,10 @@ plugins/             Expo config plugin（Xcode 27 ビルド対策）
 - カテゴリ別の予算は `categoryBudgets`（カテゴリ名→円、毎月共通）。進み具合は `categoryBudgetStatuses()`、カテゴリの名前変更・削除では `renameCategoryBudget()` で付け替える。先月との比較は `utils/compare.ts`。
 - リマインド通知は `utils/notifications.ts`（`expo-notifications` の毎日のローカル通知）。設定（`reminder`）が変わったとき、および起動のたびに `applyReminder()` で登録し直す（`app/_layout.tsx`）。通知はネイティブモジュールなので、追加・更新したら iOS の再ビルドが必要。
 - 画面の ON/OFF 切り替えには React Native 標準の `Switch` を使わない（シミュレーターのタップ操作に反応しないことがあった）。`TouchableOpacity` で作った `components/screens/Reminder.tsx` のスイッチに倣う。
+- 記録（`Entry`）には任意の `memo`（200字まで）・`payment`（現金/カード/電子マネー/その他。支出のみ）・`photo`（レシート写真のファイル名）がある。写真本体は `expo-file-system` でアプリ専用フォルダ（`receipts/`）に保存し、**バックアップ（JSON）には含まれない**。どの記録からも使われていない写真は起動時に `cleanupOrphanReceipts()` が消す（削除の取り消しを待つため、削除直後には消さない）。ファイル名は `isValidReceiptFileName()` で検査する（パスを含むものは無視）。
+- 日付が今日より後の記録は「予定」（`utils/planned.ts`）。収支には含めたうえで、ホームに「うち予定」を表示する。
+- 年間の集計は `utils/annual.ts`（`summarizeYear`）。
+- アプリのロックは `appLock`（`@app_lock_enabled`）。`app/_layout.tsx` が起動時と、30秒以上離れて戻ったとき（`utils/app-lock.ts`）に `LockScreen` を全面表示する。オン/オフの切り替えには本人確認（`utils/biometrics.ts`）を通す。端末に認証手段が無いときはオンにできない（自分が締め出されないように）。Face ID・カメラ・写真の利用目的の文言は `app.json` のプラグイン設定にある。
 - 予算は「毎月共通」（`budget`）と「その月だけ」（`budgetOverrides`、キーは `YYYY-MM`）の2段構え。表示に使う値は必ず `effectiveBudget()`（`utils/budget.ts`）で求める。バックアップにも両方入る。
 - 移行前に退避した履歴（`_legacy_backup` / `_corrupt_○○`）は、`hasLegacyBackup` が true のときだけデータ管理画面に「控えを削除」を出す。キーの判定は `isLegacyBackupKey()`。
 - 固定費（`RecurringRule`）にも `type`（`'income' | 'expense'`）がある。収入の固定費はカテゴリが常に「収入」で、自動登録されると収入の記録になる。`type` が無い古いデータは `normalizeRule` で支出として読む。

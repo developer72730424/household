@@ -11,11 +11,12 @@ import { useAppData } from '@/context/app-data';
 import { AppColors, useAppColors } from '@/hooks/use-app-colors';
 import { shouldRemindBackup } from '@/utils/backup';
 import { effectiveBudget } from '@/utils/budget';
+import { isPlanned, splitPlanned } from '@/utils/planned';
 import { categoryBudgetStatuses } from '@/utils/category-budget';
 import { compareWithPreviousMonth, describeExpenseChange } from '@/utils/compare';
 import {
     entriesInMonth, expenseByCategory, formatDisplayDate, formatMonthJapanese, monthKeyOf, shiftMonth, sortEntries,
-    summarize, type Entry,
+    summarize, toDateString, type Entry,
 } from '@/utils/entries';
 
 const screenWidth = Dimensions.get('window').width;
@@ -26,12 +27,14 @@ const CHART_COLORS = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF'];
 // ホームの「メニュー」から開く画面。よく使う入力（支出・収入）は右下の＋ボタンにある
 const MENU_ITEMS: { label: string; icon: string; color: string; href: Href }[] = [
     { label: '収支統計', icon: '📊', color: '#34C759', href: '/statistics' },
+    { label: '年間の集計', icon: '📅', color: '#007AFF', href: '/annual' },
     { label: '検索・フィルター', icon: '🔍', color: '#FF9500', href: '/search' },
     { label: '固定費', icon: '🔁', color: '#AF52DE', href: '/recurring' },
     { label: 'テンプレート', icon: '📋', color: '#FF9500', href: '/templates' },
     { label: 'カテゴリ設定', icon: '⚙️', color: '#5856D6', href: '/categories' },
     { label: 'カテゴリ別の予算', icon: '🎯', color: '#FF2D55', href: '/category-budgets' },
     { label: 'リマインド通知', icon: '🔔', color: '#FF9500', href: '/reminder' },
+    { label: 'アプリのロック', icon: '🔒', color: '#8E8E93', href: '/security' },
     { label: 'データ管理・バックアップ', icon: '💾', color: '#00C7BE', href: '/export' },
 ];
 
@@ -57,6 +60,9 @@ export default function HomeScreen() {
         () => sortEntries(entriesInMonth(entries, monthKeyOf(currentMonth))),
         [entries, currentMonth],
     );
+    // 今日より後の日付の記録は「予定」として区別する
+    const today = toDateString(new Date());
+    const planned = useMemo(() => splitPlanned(monthEntries, today), [monthEntries, today]);
     const { income: monthlyIncome, expense: monthlyExpense, balance: monthlyTotal } = useMemo(
         () => summarize(monthEntries),
         [monthEntries],
@@ -131,6 +137,12 @@ export default function HomeScreen() {
                 <Text style={styles.monthlyBreakdown}>
                     収入 ¥{monthlyIncome.toLocaleString()}　/　支出 ¥{monthlyExpense.toLocaleString()}
                 </Text>
+                {planned.plannedCount > 0 && (
+                    // 日付がこれから先の記録は、収支に含めたうえで「うち予定」として内訳を示す
+                    <Text style={styles.plannedLine}>
+                        うち予定：支出 ¥{planned.plannedExpense.toLocaleString()}／収入 ¥{planned.plannedIncome.toLocaleString()}
+                    </Text>
+                )}
                 {changeText && (
                     // 支出が増えたら注意色、減ったら良い色（同じなら通常色）
                     <Text style={[styles.changeText, expenseDiff > 0 && { color: c.danger }, expenseDiff < 0 && { color: c.success }]}>
@@ -284,8 +296,14 @@ export default function HomeScreen() {
                             }}
                         >
                             <View style={{ flexShrink: 1 }}>
-                                <Text style={styles.listItemText}>{item.item}</Text>
-                                <Text style={{ fontSize: 12, color: c.textSecondary }}>{item.category} | {formatDisplayDate(item.date)}</Text>
+                                <Text style={styles.listItemText}>
+                                    {isPlanned(item, today) && <Text style={styles.plannedBadge}>予定 </Text>}
+                                    {item.item}
+                                </Text>
+                                <Text style={{ fontSize: 12, color: c.textSecondary }}>
+                                    {item.category}{item.payment ? ` · ${item.payment}` : ''} | {formatDisplayDate(item.date)}{item.photo ? ' 📷' : ''}
+                                </Text>
+                                {!!item.memo && <Text style={styles.memoLine} numberOfLines={1}>{item.memo}</Text>}
                             </View>
                             <View style={{ alignItems: 'flex-end' }}>
                                 <Text style={[styles.listItemAmount, isIncome && { color: c.success }]}>
@@ -424,6 +442,9 @@ const createStyles = (c: AppColors) => StyleSheet.create({
         color: c.primaryText,
         fontWeight: '800',
     },
+    plannedLine: { fontSize: 12, color: c.textMuted, marginTop: 4 },
+    plannedBadge: { fontSize: 11, fontWeight: '700', color: c.warning },
+    memoLine: { fontSize: 11, color: c.textMuted, marginTop: 2 },
     changeText: { fontSize: 12, color: c.textSecondary, marginTop: 4, fontWeight: '600' },
     monthlyBreakdown: {
         fontSize: 12,

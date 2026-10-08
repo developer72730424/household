@@ -16,10 +16,11 @@ interface InputIncomeProps {
     isEditMode?: boolean;
     onSave: () => void;
     onCancel: () => void;
+    extras?: React.ReactNode;
 }
 
 export default function InputIncome({
-    item, setItem, amount, setAmount, date, onChangeDate, isEditMode = false, onSave, onCancel,
+    item, setItem, amount, setAmount, date, onChangeDate, isEditMode = false, onSave, onCancel, extras,
 }: InputIncomeProps) {
     const c = useAppColors();
     const headerHeight = useHeaderHeight();
@@ -65,6 +66,8 @@ export default function InputIncome({
                     <TouchableOpacity style={styles.dateSelector} onPress={() => setCalendarVisible(true)}>
                         <Text style={{ color: c.text, fontWeight: '500' }}>📅 日付：{formatDisplayDate(toDateString(date))}</Text>
                     </TouchableOpacity>
+
+                    {extras}
 
                     <CalendarModal
                         visible={calendarVisible}

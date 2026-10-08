@@ -21,11 +21,12 @@ interface InputItemProps {
     onCancel: () => void;
     templates?: Template[];
     onSelectTemplate?: (template: Template) => void;
+    extras?: React.ReactNode; // 日付の下に出す追加の入力（メモ・支払い方法・レシート写真）
 }
 
 export default function InputItem({
     item, setItem, amount, setAmount, selectedCategory, setSelectedCategory, categories,
-    date, onChangeDate, isEditMode = false, onSave, onCancel, templates = [], onSelectTemplate,
+    date, onChangeDate, isEditMode = false, onSave, onCancel, templates = [], onSelectTemplate, extras,
 }: InputItemProps) {
     const c = useAppColors();
     const headerHeight = useHeaderHeight();
@@ -85,6 +86,8 @@ export default function InputItem({
                     <TouchableOpacity style={styles.dateSelector} onPress={() => setCalendarVisible(true)}>
                         <Text style={{ color: c.text, fontWeight: '500' }}>📅 日付：{formatDisplayDate(toDateString(date))}</Text>
                     </TouchableOpacity>
+
+                    {extras}
 
                     <CalendarModal
                         visible={calendarVisible}

@@ -34,7 +34,21 @@
       "@react-native-community/datetimepicker",
       "expo-font",
       "expo-web-browser",
-      "./plugins/with-xcode27-fixes.js"
+      "./plugins/with-xcode27-fixes.js",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "家計簿のロックを解除するために Face ID を使用します。"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "レシートの写真を選んで記録に添付するために、写真ライブラリへアクセスします。",
+          "cameraPermission": "レシートを撮影して記録に添付するために、カメラを使用します。",
+          "microphonePermission": false
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

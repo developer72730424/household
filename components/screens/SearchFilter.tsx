@@ -30,7 +30,8 @@ export default function SearchFilter({ entries, categories, onBack }: SearchFilt
         const start = startDate ? toDateString(startDate) : null;
         const end = endDate ? toDateString(endDate) : null;
         return sortEntries(entries).filter((e) => {
-            if (keyword && !e.item.toLowerCase().includes(keyword)) return false;
+            // 品目だけでなくメモも検索の対象にする
+            if (keyword && !e.item.toLowerCase().includes(keyword) && !(e.memo ?? '').toLowerCase().includes(keyword)) return false;
             if (selectedCategories.length > 0 && !selectedCategories.includes(e.category)) return false;
             if (start && e.date < start) return false;
             if (end && e.date > end) return false;
@@ -69,7 +70,7 @@ export default function SearchFilter({ entries, categories, onBack }: SearchFilt
             <View style={styles.searchContainer}>
                 <TextInput
                     style={styles.searchInput}
-                    placeholder="品目名で検索... (例: ランチ)"
+                    placeholder="品目・メモで検索... (例: ランチ)"
                     placeholderTextColor={c.textMuted}
                     value={searchText}
                     onChangeText={setSearchText}

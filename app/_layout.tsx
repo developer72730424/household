@@ -1,15 +1,18 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import React, { useEffect, useMemo } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AppState, StyleSheet, Text, View } from 'react-native';
 import 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppDataProvider, useAppData } from '@/context/app-data';
 import { AppColors, useAppColors } from '@/hooks/use-app-colors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import LockScreen from '@/components/lock-screen';
+import { shouldLockOnLaunch, shouldLockOnResume } from '@/utils/app-lock';
 import { applyReminder } from '@/utils/notifications';
+import { cleanupOrphanReceipts } from '@/utils/receipt-files';
 import { HEADER_CONTENT_HEIGHT } from '@/hooks/use-header-height';
 
 export const unstable_settings = {
@@ -20,7 +23,49 @@ function Shell() {
     const c = useAppColors();
     const styles = useMemo(() => createStyles(c), [c]);
     const insets = useSafeAreaInsets();
-    const { loaded, reminder } = useAppData();
+    const { loaded, reminder, appLock, entries } = useAppData();
+
+    // どの記録からも使われていないレシート写真を、起動時に掃除する（削除を取り消せる間は残るので、次回の起動で消える）
+    const cleaned = useRef(false);
+    useEffect(() => {
+        if (!loaded || cleaned.current) return;
+        cleaned.current = true;
+        try {
+            cleanupOrphanReceipts(entries.map(e => e.photo));
+        } catch (e) {
+            console.warn('写真の掃除に失敗しました', e);
+        }
+    }, [loaded, entries]);
+
+    // アプリのロック: 起動直後と、一定時間離れて戻ったときにロック画面を出す
+    const [locked, setLocked] = useState(true); // 設定を読み込むまでは安全側（ロック）で始める
+    const leftAt = useRef<number | null>(null);
+    const launchHandled = useRef(false);
+    const unlock = useCallback(() => setLocked(false), []);
+
+    useEffect(() => {
+        if (!loaded || launchHandled.current) return;
+        launchHandled.current = true;
+        setLocked(shouldLockOnLaunch(appLock));
+    }, [loaded, appLock]);
+
+    // ロックをオフにしたら、ロック画面も外す
+    useEffect(() => {
+        if (loaded && !appLock) setLocked(false);
+    }, [loaded, appLock]);
+
+    useEffect(() => {
+        const sub = AppState.addEventListener('change', (state) => {
+            if (state === 'background' || state === 'inactive') {
+                // 認証ダイアログ（Face ID）が出ている間も inactive になるので、最初の離脱の時刻だけ覚える
+                if (leftAt.current === null) leftAt.current = Date.now();
+            } else if (state === 'active') {
+                if (shouldLockOnResume({ enabled: appLock, leftAt: leftAt.current, now: Date.now() })) setLocked(true);
+                leftAt.current = null;
+            }
+        });
+        return () => sub.remove();
+    }, [appLock]);
 
     // Web: ブラウザのタブ名
     useEffect(() => {
@@ -44,6 +89,9 @@ function Shell() {
             {loaded && (
                 <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: c.background } }} />
             )}
+
+            {/* ロック中は、記録が見えないよう画面全体を覆う */}
+            {loaded && appLock && locked && <LockScreen onUnlock={unlock} />}
         </View>
     );
 }

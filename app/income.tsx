@@ -2,6 +2,7 @@ import { useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { Alert, Keyboard } from 'react-native';
 
+import EntryExtras from '@/components/entry-extras';
 import InputIncome from '@/components/screens/InputIncome';
 import { useAppData } from '@/context/app-data';
 import { useGoBack } from '@/hooks/use-go-back';
@@ -18,6 +19,7 @@ export default function IncomeRoute() {
     const [item, setItem] = useState(editing?.item ?? '');
     const [amount, setAmount] = useState(editing ? String(editing.amount) : '');
     const [date, setDate] = useState(() => (editing ? dateFromString(editing.date) : null) ?? new Date());
+    const [memo, setMemo] = useState(editing?.memo ?? '');
 
     useEffect(() => {
         if (id && !editing) goBack();
@@ -34,7 +36,7 @@ export default function IncomeRoute() {
             Alert.alert('入力エラー', check.message);
             return;
         }
-        const input = { item: item.trim(), amount: check.value, category: INCOME_LABEL, type: 'income' as const, date: toDateString(date) };
+        const input = { item: item.trim(), amount: check.value, category: INCOME_LABEL, type: 'income' as const, date: toDateString(date), memo: memo.trim() || undefined };
         if (editing) updateEntry(editing.id, input);
         else addEntry(input);
         Keyboard.dismiss();
@@ -52,6 +54,7 @@ export default function IncomeRoute() {
             isEditMode={!!editing}
             onSave={handleSave}
             onCancel={goBack}
+            extras={<EntryExtras memo={memo} onChangeMemo={setMemo} />}
         />
     );
 }

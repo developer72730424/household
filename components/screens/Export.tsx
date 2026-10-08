@@ -45,9 +45,9 @@ export default function Export({ entries, categories, lastBackupAt, getSnapshot,
 
     // CSV（日付の新しい順）。日付は YYYY-MM-DD なので表計算ソフトで並び替えしやすい
     const generateCSV = (): string => {
-        const headers = ['日付', '種別', '品目', 'カテゴリ', '金額'];
+        const headers = ['日付', '種別', '品目', 'カテゴリ', '金額', '支払い方法', 'メモ'];
         const rows = sortEntries(entries).map((e) => [
-            e.date, e.type === 'income' ? '収入' : '支出', e.item, e.category, String(e.amount),
+            e.date, e.type === 'income' ? '収入' : '支出', e.item, e.category, String(e.amount), e.payment ?? '', e.memo ?? '',
         ]);
         return [headers, ...rows].map((row) => row.map(escapeCSV).join(',')).join('\n');
     };
@@ -394,7 +394,7 @@ export default function Export({ entries, categories, lastBackupAt, getSnapshot,
                         • CSV形式: 共有メニューからメモやファイルに保存し、ExcelやGoogle Sheetsで分析できます
                     </Text>
                     <Text style={styles.infoText}>
-                        • JSON形式: 完全なバックアップです。「ファイルに保存」で作ったファイルを、機種変更後などに「ファイルから復元」で元に戻せます（iCloud Drive に保存すれば、別の端末からも選べます）
+                        • JSON形式: 完全なバックアップです（メモ・支払い方法を含みます。レシート写真は含まれません）。「ファイルに保存」で作ったファイルを、機種変更後などに「ファイルから復元」で元に戻せます（iCloud Drive に保存すれば、別の端末からも選べます）
                     </Text>
                     <Text style={styles.infoText}>
                         • テキストレポート: 共有メニューからメールやメモアプリに送れます

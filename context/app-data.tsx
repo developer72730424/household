@@ -9,7 +9,7 @@ import { normalizeReminder, type ReminderSettings, DEFAULT_REMINDER } from '@/ut
 import { fallbackCategory, removeCategory, renameCategory } from '@/utils/categories';
 import {
     hasLegacyShape, INCOME_LABEL, newEntryId, normalizeCategories, normalizeEntries, normalizeTemplates, restoreDeleted,
-    type Entry, type EntryType, type Template,
+    type Entry, type EntryType, type PaymentMethod, type Template,
 } from '@/utils/entries';
 import { generateDueEntries, normalizeRules, type RecurringRule } from '@/utils/recurring';
 
@@ -22,6 +22,7 @@ const KEYS = {
     budgetOverrides: '@app_budget_overrides_Default',
     categoryBudgets: '@app_category_budgets_Default',
     reminder: '@app_reminder',
+    appLock: '@app_lock_enabled',
     recurring: '@app_recurring_Default',
     lastBackupAt: '@app_last_backup_at',
     backupSnoozeUntil: '@app_backup_snooze_until',
@@ -36,6 +37,7 @@ export interface AppData {
     budgetOverrides: BudgetOverrides; // その月だけの予算（キーは YYYY-MM）
     categoryBudgets: CategoryBudgets; // カテゴリ別の予算（毎月共通）
     reminder: ReminderSettings;       // 入力のリマインド通知
+    appLock: boolean;                 // 起動時・復帰時に Face ID / パスコードを求める
     lastBackupAt: string | null;
     backupSnoozeUntil: string | null;
     // 旧形式からの移行前に退避した履歴・壊れて読めなかったデータの控えがあるか
@@ -51,6 +53,7 @@ const EMPTY: AppData = {
     budgetOverrides: {},
     categoryBudgets: {},
     reminder: { ...DEFAULT_REMINDER },
+    appLock: false,
     lastBackupAt: null,
     backupSnoozeUntil: null,
     hasLegacyBackup: false,
@@ -62,6 +65,9 @@ export interface EntryInput {
     category: string;
     type: EntryType;
     date: string; // YYYY-MM-DD
+    memo?: string;
+    payment?: PaymentMethod;
+    photo?: string;
 }
 
 export type ActionResult = { ok: true } | { ok: false; message: string };
@@ -82,6 +88,7 @@ interface AppDataActions {
     setMonthBudget: (month: string, budget: number | null) => void;
     setCategoryBudget: (category: string, budget: number | null) => void;
     setReminder: (reminder: ReminderSettings) => void;
+    setAppLock: (enabled: boolean) => void;
     addRecurring: (rule: RecurringRule) => void;
     updateRecurring: (rule: RecurringRule) => void;
     deleteRecurring: (id: string) => void;
@@ -168,6 +175,8 @@ async function loadAll(): Promise<{ data: AppData; notice: string | null }> {
     const reminderParsed = parseJson(raw[KEYS.reminder]);
     const reminder = normalizeReminder(reminderParsed.ok ? reminderParsed.value : undefined);
 
+    const appLock = raw[KEYS.appLock] === 'true';
+
     const budgetNumber = Number(raw[KEYS.budget]);
     const budget = raw[KEYS.budget] != null && Number.isFinite(budgetNumber) && budgetNumber > 0 ? Math.floor(budgetNumber) : null;
 
@@ -184,6 +193,7 @@ async function loadAll(): Promise<{ data: AppData; notice: string | null }> {
             budgetOverrides,
             categoryBudgets,
             reminder,
+            appLock,
             lastBackupAt: raw[KEYS.lastBackupAt] ?? null,
             backupSnoozeUntil: raw[KEYS.backupSnoozeUntil] ?? null,
             hasLegacyBackup,
@@ -198,7 +208,7 @@ type PersistedKey = keyof typeof KEYS;
 async function writeKey(key: PersistedKey, value: AppData[PersistedKey]): Promise<void> {
     const storageKey = KEYS[key];
     if (value === null) await AsyncStorage.removeItem(storageKey);
-    else if (typeof value === 'number') await AsyncStorage.setItem(storageKey, String(value));
+    else if (typeof value === 'number' || typeof value === 'boolean') await AsyncStorage.setItem(storageKey, String(value));
     else if (typeof value === 'string') await AsyncStorage.setItem(storageKey, value);
     else await AsyncStorage.setItem(storageKey, JSON.stringify(value));
 }
@@ -331,6 +341,9 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         },
         setReminder: (reminder) => {
             void commit({ reminder });
+        },
+        setAppLock: (enabled) => {
+            void commit({ appLock: enabled });
         },
         setMonthBudget: (month, budget) => {
             void commit({ budgetOverrides: withMonthBudget(dataRef.current.budgetOverrides, month, budget) });
