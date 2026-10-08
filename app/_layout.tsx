@@ -9,6 +9,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppDataProvider, useAppData } from '@/context/app-data';
 import { AppColors, useAppColors } from '@/hooks/use-app-colors';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { applyReminder } from '@/utils/notifications';
 import { HEADER_CONTENT_HEIGHT } from '@/hooks/use-header-height';
 
 export const unstable_settings = {
@@ -19,12 +20,18 @@ function Shell() {
     const c = useAppColors();
     const styles = useMemo(() => createStyles(c), [c]);
     const insets = useSafeAreaInsets();
-    const { loaded } = useAppData();
+    const { loaded, reminder } = useAppData();
 
     // Web: ブラウザのタブ名
     useEffect(() => {
         if (typeof document !== 'undefined') document.title = 'シンプル家計簿';
     }, []);
+
+    // 起動のたびに、設定どおりの通知が登録されている状態に整える（OS の更新や再インストールで消えていても戻る）
+    useEffect(() => {
+        if (!loaded) return;
+        applyReminder(reminder).catch((e) => console.warn('通知の登録に失敗しました', e));
+    }, [loaded, reminder]);
 
     return (
         <View style={styles.root}>

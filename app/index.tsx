@@ -5,11 +5,14 @@ import { PieChart } from 'react-native-chart-kit';
 
 import BackupBanner from '@/components/backup-banner';
 import BudgetCard from '@/components/budget-card';
+import CategoryBudgetCard from '@/components/category-budget-card';
 import UndoSnackbar from '@/components/undo-snackbar';
 import { useAppData } from '@/context/app-data';
 import { AppColors, useAppColors } from '@/hooks/use-app-colors';
 import { shouldRemindBackup } from '@/utils/backup';
 import { effectiveBudget } from '@/utils/budget';
+import { categoryBudgetStatuses } from '@/utils/category-budget';
+import { compareWithPreviousMonth, describeExpenseChange } from '@/utils/compare';
 import {
     entriesInMonth, expenseByCategory, formatDisplayDate, formatMonthJapanese, monthKeyOf, shiftMonth, sortEntries,
     summarize, type Entry,
@@ -27,6 +30,8 @@ const MENU_ITEMS: { label: string; icon: string; color: string; href: Href }[] =
     { label: '固定費', icon: '🔁', color: '#AF52DE', href: '/recurring' },
     { label: 'テンプレート', icon: '📋', color: '#FF9500', href: '/templates' },
     { label: 'カテゴリ設定', icon: '⚙️', color: '#5856D6', href: '/categories' },
+    { label: 'カテゴリ別の予算', icon: '🎯', color: '#FF2D55', href: '/category-budgets' },
+    { label: 'リマインド通知', icon: '🔔', color: '#FF9500', href: '/reminder' },
     { label: 'データ管理・バックアップ', icon: '💾', color: '#00C7BE', href: '/export' },
 ];
 
@@ -34,7 +39,7 @@ export default function HomeScreen() {
     const c = useAppColors();
     const styles = useMemo(() => createStyles(c), [c]);
     const router = useRouter();
-    const { entries, budget, budgetOverrides, setBudget, setMonthBudget, deleteEntry, restoreEntry, lastBackupAt, backupSnoozeUntil, snoozeBackup } = useAppData();
+    const { entries, budget, budgetOverrides, categoryBudgets, setBudget, setMonthBudget, deleteEntry, restoreEntry, lastBackupAt, backupSnoozeUntil, snoozeBackup } = useAppData();
     const [currentMonth, setCurrentMonth] = useState(() => new Date());
     const [isFabOpen, setIsFabOpen] = useState(false);
     const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -56,6 +61,18 @@ export default function HomeScreen() {
         () => summarize(monthEntries),
         [monthEntries],
     );
+    // 先月との比較（先月に記録が無ければ出さない）
+    const changeText = useMemo(
+        () => describeExpenseChange(compareWithPreviousMonth(entries, currentMonth)),
+        [entries, currentMonth],
+    );
+    const expenseDiff = useMemo(() => compareWithPreviousMonth(entries, currentMonth).expenseDiff, [entries, currentMonth]);
+    // カテゴリ別予算の進み具合（今月の支出に対して）
+    const categoryStatuses = useMemo(
+        () => categoryBudgetStatuses(monthEntries, categoryBudgets),
+        [monthEntries, categoryBudgets],
+    );
+
     const chartData = useMemo(
         () => expenseByCategory(monthEntries).map((t, i) => ({
             name: t.name,
@@ -114,6 +131,12 @@ export default function HomeScreen() {
                 <Text style={styles.monthlyBreakdown}>
                     収入 ¥{monthlyIncome.toLocaleString()}　/　支出 ¥{monthlyExpense.toLocaleString()}
                 </Text>
+                {changeText && (
+                    // 支出が増えたら注意色、減ったら良い色（同じなら通常色）
+                    <Text style={[styles.changeText, expenseDiff > 0 && { color: c.danger }, expenseDiff < 0 && { color: c.success }]}>
+                        {expenseDiff > 0 ? '▲ ' : expenseDiff < 0 ? '▼ ' : ''}{changeText}
+                    </Text>
+                )}
             </View>
 
             <BudgetCard
@@ -123,6 +146,8 @@ export default function HomeScreen() {
                 spent={monthlyExpense}
                 onSave={(amount, scope) => (scope === 'month' ? setMonthBudget(monthKeyOf(currentMonth), amount) : setBudget(amount))}
             />
+
+            <CategoryBudgetCard statuses={categoryStatuses} onEdit={() => router.push('/category-budgets')} />
 
             {showBackupBanner && (
                 <BackupBanner
@@ -399,6 +424,7 @@ const createStyles = (c: AppColors) => StyleSheet.create({
         color: c.primaryText,
         fontWeight: '800',
     },
+    changeText: { fontSize: 12, color: c.textSecondary, marginTop: 4, fontWeight: '600' },
     monthlyBreakdown: {
         fontSize: 12,
         color: c.textSecondary,

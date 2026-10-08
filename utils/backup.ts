@@ -3,6 +3,7 @@ import {
     normalizeCategories, normalizeEntries, normalizeTemplates, summarize, type Entry, type Template,
 } from './entries.ts';
 import { normalizeOverrides, type BudgetOverrides } from './budget.ts';
+import { normalizeCategoryBudgets, type CategoryBudgets } from './category-budget.ts';
 import { normalizeRules, type RecurringRule } from './recurring.ts';
 
 export const BACKUP_VERSION = 2;
@@ -19,6 +20,7 @@ export interface AppSnapshot {
     recurring: RecurringRule[];
     budget: number | null;
     budgetOverrides: BudgetOverrides;
+    categoryBudgets: CategoryBudgets;
 }
 
 export interface BackupPayload {
@@ -32,6 +34,7 @@ export interface BackupPayload {
     recurring: RecurringRule[];
     budget: number | null;
     budgetOverrides: BudgetOverrides;
+    categoryBudgets: CategoryBudgets;
 }
 
 export function buildBackup(data: AppSnapshot, now: Date = new Date()): BackupPayload {
@@ -47,6 +50,7 @@ export function buildBackup(data: AppSnapshot, now: Date = new Date()): BackupPa
         recurring: data.recurring,
         budget: data.budget,
         budgetOverrides: data.budgetOverrides,
+        categoryBudgets: data.categoryBudgets,
     };
 }
 
@@ -61,6 +65,7 @@ export type ParsedBackup =
         recurring: RecurringRule[] | null;
         budget: number | null | undefined;
         budgetOverrides: BudgetOverrides | null;
+        categoryBudgets: CategoryBudgets | null;
     }
     | { ok: false; error: string };
 
@@ -95,6 +100,7 @@ export function parseBackup(text: string): ParsedBackup {
         recurring: Array.isArray(p.recurring) ? normalizeRules(p.recurring) : null,
         budget,
         budgetOverrides: p.budgetOverrides && typeof p.budgetOverrides === 'object' ? normalizeOverrides(p.budgetOverrides) : null,
+        categoryBudgets: p.categoryBudgets && typeof p.categoryBudgets === 'object' ? normalizeCategoryBudgets(p.categoryBudgets) : null,
     };
 }
 

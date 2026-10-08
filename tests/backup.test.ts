@@ -11,6 +11,7 @@ const snapshot = {
     recurring: [{ id: 'r', item: '家賃', amount: 80000, type: 'expense' as const, category: '食費', day: 7, lastGenerated: '2026-10' }],
     budget: 50000,
     budgetOverrides: { '2026-10': 80000 },
+    categoryBudgets: { 食費: 40000 },
 };
 
 test('バックアップを作って、そのまま読み戻せる（往復で同じ）', () => {
@@ -24,6 +25,7 @@ test('バックアップを作って、そのまま読み戻せる（往復で�
     assert.deepEqual(parsed.recurring, snapshot.recurring);
     assert.equal(parsed.budget, 50000);
     assert.deepEqual(parsed.budgetOverrides, { '2026-10': 80000 });
+    assert.deepEqual(parsed.categoryBudgets, { 食費: 40000 });
     assert.equal(parsed.skipped, 0);
 });
 
@@ -46,6 +48,7 @@ test('旧バージョンのバックアップ（履歴とカテゴリだけ・�
     assert.equal(parsed.recurring, null);
     assert.equal(parsed.budget, undefined);
     assert.equal(parsed.budgetOverrides, null);
+    assert.equal(parsed.categoryBudgets, null);
 });
 
 test('読めない行があれば件数を返す', () => {

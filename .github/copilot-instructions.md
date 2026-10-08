@@ -34,6 +34,9 @@ plugins/             Expo config plugin（Xcode 27 ビルド対策）
 - 記録を削除したら、`deleteEntry` の戻り値を `UndoSnackbar` に渡して「元に戻す」を出す（`restoreEntry` で戻せる）。
 - 保存は **`useAppData()` の操作関数**（`addEntry` など）だけで行う。`AsyncStorage` を画面から直接触らない。
 - 保存形式を変えるときは、`utils/entries.ts` の `normalizeEntry` 等で旧形式も読めるようにし、起動時の移行（`context/app-data.tsx` の `loadAll`）を更新する。バックアップ（`utils/backup.ts`）も旧バージョンを読めること。
+- カテゴリ別の予算は `categoryBudgets`（カテゴリ名→円、毎月共通）。進み具合は `categoryBudgetStatuses()`、カテゴリの名前変更・削除では `renameCategoryBudget()` で付け替える。先月との比較は `utils/compare.ts`。
+- リマインド通知は `utils/notifications.ts`（`expo-notifications` の毎日のローカル通知）。設定（`reminder`）が変わったとき、および起動のたびに `applyReminder()` で登録し直す（`app/_layout.tsx`）。通知はネイティブモジュールなので、追加・更新したら iOS の再ビルドが必要。
+- 画面の ON/OFF 切り替えには React Native 標準の `Switch` を使わない（シミュレーターのタップ操作に反応しないことがあった）。`TouchableOpacity` で作った `components/screens/Reminder.tsx` のスイッチに倣う。
 - 予算は「毎月共通」（`budget`）と「その月だけ」（`budgetOverrides`、キーは `YYYY-MM`）の2段構え。表示に使う値は必ず `effectiveBudget()`（`utils/budget.ts`）で求める。バックアップにも両方入る。
 - 移行前に退避した履歴（`_legacy_backup` / `_corrupt_○○`）は、`hasLegacyBackup` が true のときだけデータ管理画面に「控えを削除」を出す。キーの判定は `isLegacyBackupKey()`。
 - 固定費（`RecurringRule`）にも `type`（`'income' | 'expense'`）がある。収入の固定費はカテゴリが常に「収入」で、自動登録されると収入の記録になる。`type` が無い古いデータは `normalizeRule` で支出として読む。

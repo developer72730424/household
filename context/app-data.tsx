@@ -4,7 +4,9 @@ import { Alert, AppState } from 'react-native';
 
 import { isLegacyBackupKey, LEGACY_BACKUP_KEY, snoozeUntilFrom, type AppSnapshot, type ParsedBackup } from '@/utils/backup';
 import { normalizeOverrides, withMonthBudget, type BudgetOverrides } from '@/utils/budget';
-import { removeCategory, renameCategory } from '@/utils/categories';
+import { normalizeCategoryBudgets, renameCategoryBudget, withCategoryBudget, type CategoryBudgets } from '@/utils/category-budget';
+import { normalizeReminder, type ReminderSettings, DEFAULT_REMINDER } from '@/utils/reminder';
+import { fallbackCategory, removeCategory, renameCategory } from '@/utils/categories';
 import {
     hasLegacyShape, INCOME_LABEL, newEntryId, normalizeCategories, normalizeEntries, normalizeTemplates, restoreDeleted,
     type Entry, type EntryType, type Template,
@@ -18,6 +20,8 @@ const KEYS = {
     templates: '@app_templates_Default',
     budget: '@app_budget_Default',
     budgetOverrides: '@app_budget_overrides_Default',
+    categoryBudgets: '@app_category_budgets_Default',
+    reminder: '@app_reminder',
     recurring: '@app_recurring_Default',
     lastBackupAt: '@app_last_backup_at',
     backupSnoozeUntil: '@app_backup_snooze_until',
@@ -30,6 +34,8 @@ export interface AppData {
     recurring: RecurringRule[];
     budget: number | null;
     budgetOverrides: BudgetOverrides; // その月だけの予算（キーは YYYY-MM）
+    categoryBudgets: CategoryBudgets; // カテゴリ別の予算（毎月共通）
+    reminder: ReminderSettings;       // 入力のリマインド通知
     lastBackupAt: string | null;
     backupSnoozeUntil: string | null;
     // 旧形式からの移行前に退避した履歴・壊れて読めなかったデータの控えがあるか
@@ -43,6 +49,8 @@ const EMPTY: AppData = {
     recurring: [],
     budget: null,
     budgetOverrides: {},
+    categoryBudgets: {},
+    reminder: { ...DEFAULT_REMINDER },
     lastBackupAt: null,
     backupSnoozeUntil: null,
     hasLegacyBackup: false,
@@ -72,6 +80,8 @@ interface AppDataActions {
     deleteTemplate: (id: string) => void;
     setBudget: (budget: number | null) => void;
     setMonthBudget: (month: string, budget: number | null) => void;
+    setCategoryBudget: (category: string, budget: number | null) => void;
+    setReminder: (reminder: ReminderSettings) => void;
     addRecurring: (rule: RecurringRule) => void;
     updateRecurring: (rule: RecurringRule) => void;
     deleteRecurring: (id: string) => void;
@@ -153,6 +163,11 @@ async function loadAll(): Promise<{ data: AppData; notice: string | null }> {
     const overridesParsed = parseJson(raw[KEYS.budgetOverrides]);
     const budgetOverrides = normalizeOverrides(overridesParsed.ok ? overridesParsed.value : undefined);
 
+    const categoryBudgetsParsed = parseJson(raw[KEYS.categoryBudgets]);
+    const categoryBudgets = normalizeCategoryBudgets(categoryBudgetsParsed.ok ? categoryBudgetsParsed.value : undefined);
+    const reminderParsed = parseJson(raw[KEYS.reminder]);
+    const reminder = normalizeReminder(reminderParsed.ok ? reminderParsed.value : undefined);
+
     const budgetNumber = Number(raw[KEYS.budget]);
     const budget = raw[KEYS.budget] != null && Number.isFinite(budgetNumber) && budgetNumber > 0 ? Math.floor(budgetNumber) : null;
 
@@ -167,6 +182,8 @@ async function loadAll(): Promise<{ data: AppData; notice: string | null }> {
             recurring,
             budget,
             budgetOverrides,
+            categoryBudgets,
+            reminder,
             lastBackupAt: raw[KEYS.lastBackupAt] ?? null,
             backupSnoozeUntil: raw[KEYS.backupSnoozeUntil] ?? null,
             hasLegacyBackup,
@@ -281,6 +298,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
                 entries: result.data.entries,
                 templates: result.data.templates,
                 recurring: result.data.recurring,
+                categoryBudgets: renameCategoryBudget(d.categoryBudgets, from, to.trim()),
             });
             return { ok: true, moved: result.moved };
         },
@@ -288,11 +306,14 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
             const d = dataRef.current;
             const result = removeCategory(d, name);
             if (!result.ok) return result;
+            // 削除したカテゴリの予算は、記録の移し先に合わせて付け替える（移し先に予算があればそちらが残る）
+            const to = fallbackCategory(d.categories, name);
             void commit({
                 categories: result.data.categories,
                 entries: result.data.entries,
                 templates: result.data.templates,
                 recurring: result.data.recurring,
+                categoryBudgets: to ? renameCategoryBudget(d.categoryBudgets, name, to) : d.categoryBudgets,
             });
             return { ok: true, moved: result.moved };
         },
@@ -304,6 +325,12 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         },
         setBudget: (budget) => {
             void commit({ budget });
+        },
+        setCategoryBudget: (category, budget) => {
+            void commit({ categoryBudgets: withCategoryBudget(dataRef.current.categoryBudgets, category, budget) });
+        },
+        setReminder: (reminder) => {
+            void commit({ reminder });
         },
         setMonthBudget: (month, budget) => {
             void commit({ budgetOverrides: withMonthBudget(dataRef.current.budgetOverrides, month, budget) });
@@ -324,6 +351,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
             if (parsed.recurring) patch.recurring = parsed.recurring;
             if (parsed.budget !== undefined) patch.budget = parsed.budget;
             if (parsed.budgetOverrides) patch.budgetOverrides = parsed.budgetOverrides;
+            if (parsed.categoryBudgets) patch.categoryBudgets = parsed.categoryBudgets;
             return commit(patch);
         },
         resetEntries: () => commit({ entries: [] }),
@@ -342,7 +370,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         },
         getSnapshot: () => {
             const d = dataRef.current;
-            return { entries: d.entries, categories: d.categories, templates: d.templates, recurring: d.recurring, budget: d.budget, budgetOverrides: d.budgetOverrides };
+            return { entries: d.entries, categories: d.categories, templates: d.templates, recurring: d.recurring, budget: d.budget, budgetOverrides: d.budgetOverrides, categoryBudgets: d.categoryBudgets };
         },
     }), [commit]);
 
