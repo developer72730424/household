@@ -9,12 +9,15 @@ import UndoSnackbar from '@/components/undo-snackbar';
 import { useAppData } from '@/context/app-data';
 import { AppColors, useAppColors } from '@/hooks/use-app-colors';
 import { shouldRemindBackup } from '@/utils/backup';
+import { effectiveBudget } from '@/utils/budget';
 import {
     entriesInMonth, expenseByCategory, formatDisplayDate, formatMonthJapanese, monthKeyOf, shiftMonth, sortEntries,
     summarize, type Entry,
 } from '@/utils/entries';
 
 const screenWidth = Dimensions.get('window').width;
+// 円グラフの描画幅（カード内の余白を引いた幅）
+const PIE_WIDTH = Math.min(screenWidth - 100, 320);
 const CHART_COLORS = ['#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF'];
 
 // ホームの「メニュー」から開く画面。よく使う入力（支出・収入）は右下の＋ボタンにある
@@ -31,13 +34,19 @@ export default function HomeScreen() {
     const c = useAppColors();
     const styles = useMemo(() => createStyles(c), [c]);
     const router = useRouter();
-    const { entries, budget, setBudget, deleteEntry, restoreEntry, lastBackupAt, backupSnoozeUntil, snoozeBackup } = useAppData();
+    const { entries, budget, budgetOverrides, setBudget, setMonthBudget, deleteEntry, restoreEntry, lastBackupAt, backupSnoozeUntil, snoozeBackup } = useAppData();
     const [currentMonth, setCurrentMonth] = useState(() => new Date());
     const [isFabOpen, setIsFabOpen] = useState(false);
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     // 直前に削除した記録（数秒間だけ「元に戻す」を出す）
     const [lastDeleted, setLastDeleted] = useState<Entry | null>(null);
     const dismissUndo = useCallback(() => setLastDeleted(null), []);
+
+    // 表示中の月に適用される予算（その月だけの設定があれば優先）
+    const monthBudget = useMemo(
+        () => effectiveBudget(budget, budgetOverrides, monthKeyOf(currentMonth)),
+        [budget, budgetOverrides, currentMonth],
+    );
 
     const monthEntries = useMemo(
         () => sortEntries(entriesInMonth(entries, monthKeyOf(currentMonth))),
@@ -107,7 +116,13 @@ export default function HomeScreen() {
                 </Text>
             </View>
 
-            <BudgetCard budget={budget} spent={monthlyExpense} onChangeBudget={setBudget} />
+            <BudgetCard
+                monthLabel={`${currentMonth.getMonth() + 1}月`}
+                budget={monthBudget.amount}
+                isOverride={monthBudget.isOverride}
+                spent={monthlyExpense}
+                onSave={(amount, scope) => (scope === 'month' ? setMonthBudget(monthKeyOf(currentMonth), amount) : setBudget(amount))}
+            />
 
             {showBackupBanner && (
                 <BackupBanner
@@ -127,29 +142,35 @@ export default function HomeScreen() {
                         {chartData.length > 0 && (
                             <View style={styles.chartCardContainer}>
                                 <Text style={styles.chartCardTitle}>カテゴリ別支出</Text>
-                                <PieChart
-                                    data={chartData}
-                                    width={screenWidth - 120}
-                                    height={160}
-                                    chartConfig={{
-                                        color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})`,
-                                        backgroundColor: c.card,
-                                    }}
-                                    accessor={'amount'}
-                                    backgroundColor={'transparent'}
-                                    paddingLeft={'15'}
-                                    absolute
-                                />
-                            </View>
-                        )}
-                        {chartData.length > 0 && (
-                            <View style={styles.categorySummaryContainer}>
-                                {chartData.map(({ name, amount: catTotal }) => (
-                                    <View key={name} style={styles.categoryTotalItem}>
-                                        <Text style={styles.categoryTotalLabel}>{name}</Text>
-                                        <Text style={styles.categoryTotalValue}>¥{catTotal.toLocaleString()}</Text>
-                                    </View>
-                                ))}
+                                {/* 円グラフは図だけ。凡例は下に「色・カテゴリ名・金額・割合」の並びで自前表示する
+                                    （chart-kit 標準の凡例は「金額 カテゴリ名」の順で読みにくい） */}
+                                <View style={{ alignItems: 'center' }}>
+                                    <PieChart
+                                        data={chartData}
+                                        width={PIE_WIDTH}
+                                        height={170}
+                                        chartConfig={{ color: (opacity = 1) => `rgba(0, 0, 0, ${opacity})` }}
+                                        accessor={'amount'}
+                                        backgroundColor={'transparent'}
+                                        // 描画の中心は width/4 + paddingLeft。コンテナの中央に来るよう paddingLeft を決める
+                                        paddingLeft={String(PIE_WIDTH / 4)}
+                                        hasLegend={false}
+                                        absolute
+                                    />
+                                </View>
+                                <View style={styles.legendList}>
+                                    {chartData.map(({ name, amount: catTotal, color }) => {
+                                        const percent = monthlyExpense > 0 ? Math.round((catTotal / monthlyExpense) * 100) : 0;
+                                        return (
+                                            <View key={name} style={styles.legendRow}>
+                                                <View style={[styles.legendDot, { backgroundColor: color }]} />
+                                                <Text style={styles.legendName} numberOfLines={1}>{name}</Text>
+                                                <Text style={styles.legendAmount}>¥{catTotal.toLocaleString()}</Text>
+                                                <Text style={styles.legendPercent}>{percent}%</Text>
+                                            </View>
+                                        );
+                                    })}
+                                </View>
                             </View>
                         )}
                     </>
@@ -224,7 +245,7 @@ export default function HomeScreen() {
                     const isIncome = item.type === 'income';
                     return (
                         <TouchableOpacity
-                            style={[styles.listItem, { borderLeftColor: isIncome ? '#34C759' : '#5B4FA3' }]}
+                            style={[styles.listItem, { borderLeftColor: isIncome ? c.success : c.primary }]}
                             onPress={() => router.push({ pathname: isIncome ? '/income' : '/add', params: { id: item.id } })}
                             onLongPress={() => {
                                 Alert.alert('削除', `${item.item}を削除しますか？`, [
@@ -242,7 +263,7 @@ export default function HomeScreen() {
                                 <Text style={{ fontSize: 12, color: c.textSecondary }}>{item.category} | {formatDisplayDate(item.date)}</Text>
                             </View>
                             <View style={{ alignItems: 'flex-end' }}>
-                                <Text style={[styles.listItemAmount, isIncome && { color: '#34C759' }]}>
+                                <Text style={[styles.listItemAmount, isIncome && { color: c.success }]}>
                                     {isIncome ? '+' : ''}¥{item.amount.toLocaleString()}
                                 </Text>
                                 <Text style={{ fontSize: 10, color: c.textMuted }}>タップで編集・長押しで削除</Text>
@@ -262,7 +283,7 @@ export default function HomeScreen() {
                 <View style={styles.fabMenuContainer}>
                     <TouchableOpacity style={styles.menuItem} onPress={() => openInput('/income')}>
                         <Text style={styles.menuLabel}>収入を入力</Text>
-                        <View style={[styles.miniCircle, { backgroundColor: '#34C759' }]}>
+                        <View style={[styles.miniCircle, { backgroundColor: c.success }]}>
                             <Text style={{ color: '#fff' }}>💴</Text>
                         </View>
                     </TouchableOpacity>
@@ -321,65 +342,6 @@ const createStyles = (c: AppColors) => StyleSheet.create({
         paddingTop: Platform.OS === 'web' ? 10 : (Platform.OS === 'ios' ? 12 : 8),
     },
     // overlay label to replace default 'index' text in web header
-    topLeftLabel: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        height: 36,
-        zIndex: 9999,
-        backgroundColor: c.background,
-        justifyContent: 'center',
-        paddingLeft: 12,
-    },
-    topLeftLabelText: {
-        color: c.primaryText,
-        fontWeight: '700',
-        fontSize: 14,
-    },
-    header: { 
-        paddingHorizontal: 16, 
-        marginBottom: 10,
-        paddingBottom: 8,
-        borderBottomWidth: 1,
-        borderBottomColor: c.border,
-    },
-    headerTop: { 
-        flexDirection: 'row', 
-        justifyContent: 'space-between', 
-        alignItems: 'center', 
-        marginBottom: 6 
-    },
-    title: { fontSize: 20, fontWeight: '600', textAlign: 'center', color: c.text },
-    userBadge: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: '#5B4FA3',
-        paddingHorizontal: 9,
-        paddingVertical: 5,
-        borderRadius: 18,
-        alignSelf: 'flex-start',
-        marginBottom: 6,
-        elevation: 1,
-        shadowColor: '#5B4FA3',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.15,
-        shadowRadius: 2,
-    },
-    userIcon: {
-        fontSize: 14,
-        marginRight: 5,
-    },
-    userNameText: {
-        color: '#FFFFFF',
-        fontWeight: '600',
-        fontSize: 11,
-        marginRight: 2,
-    },
-    userChangeIcon: {
-        color: c.primaryText,
-        fontSize: 16,
-    },
     monthNav: { 
         flexDirection: 'row', 
         justifyContent: 'center', /* 中央寄せ */
@@ -410,23 +372,11 @@ const createStyles = (c: AppColors) => StyleSheet.create({
         color: c.primaryText,
         fontWeight: '700',
     },
-    monthYear: {
-        fontSize: 9,
-        color: c.textMuted,
-        fontWeight: '600',
-        letterSpacing: 0.2,
-    },
     monthText: { 
         fontSize: 18, 
         fontWeight: '700',
         color: c.primaryText,
         marginTop: 0,
-    },
-    monthTotal: {
-        fontSize: 12,
-        color: c.textSecondary,
-        marginTop: 4,
-        fontWeight: '600',
     },
     monthlyTotalCard: {
         backgroundColor: c.card,
@@ -455,18 +405,6 @@ const createStyles = (c: AppColors) => StyleSheet.create({
         marginTop: 6,
         fontWeight: '600',
     },
-    navText: {
-        color: c.primaryText, 
-        fontWeight: '600',
-        fontSize: 12
-    },
-    totalText: { 
-        fontSize: 16, 
-        fontWeight: '700', 
-        textAlign: 'right', 
-        color: c.primaryText,
-        marginTop: 2
-    },
 
     listItem: {
         backgroundColor: c.card,
@@ -479,7 +417,7 @@ const createStyles = (c: AppColors) => StyleSheet.create({
         alignItems: 'center',
         elevation: 2,
         borderLeftWidth: 4,
-        borderLeftColor: '#5B4FA3',
+        borderLeftColor: c.primary,
         shadowColor: '#5B4FA3',
         shadowOffset: { width: 0, height: 1 },
         shadowOpacity: 0.1,
@@ -496,103 +434,12 @@ const createStyles = (c: AppColors) => StyleSheet.create({
         color: c.primaryText 
     },
 
-    footerInput: {
-        backgroundColor: c.card,
-        padding: 20,
-        borderTopLeftRadius: 20,
-        borderTopRightRadius: 20,
-        elevation: 10,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: -2 },
-        shadowOpacity: 0.1,
-    },
-    input: { 
-        backgroundColor: c.background, 
-        padding: 12, 
-        borderRadius: 8, 
-        borderWidth: 1, 
-        borderColor: c.border,
-        color: c.text
-    },
-    categorySelectRow: { 
-        flexDirection: 'row', 
-        justifyContent: 'space-between', 
-        marginVertical: 10, 
-        alignItems: 'center' 
-    },
-    catBtn: { 
-        padding: 8, 
-        borderRadius: 18, 
-        backgroundColor: c.chip, 
-        minWidth: 60, 
-        alignItems: 'center',
-        borderWidth: 1,
-        borderColor: c.border
-    },
-    catBtnActive: { 
-        backgroundColor: '#5B4FA3',
-        borderColor: '#5B4FA3'
-    },
-    catBtnText: { 
-        fontSize: 12, 
-        color: c.textSecondary,
-        fontWeight: '500'
-    },
-    catBtnTextActive: { 
-        color: '#fff',
-        fontWeight: '600'
-    },
-    dateBtn: { 
-        padding: 8, 
-        backgroundColor: c.chip, 
-        borderRadius: 8 
-    },
-    addButton: { 
-        backgroundColor: '#5B4FA3', 
-        padding: 16, 
-        borderRadius: 10, 
-        alignItems: 'center',
-        elevation: 3,
-    },
-    addButtonText: { 
-        color: '#fff', 
-        fontSize: 16, 
-        fontWeight: '700' 
-    },
 
-    categorySummaryContainer: { 
-        flexDirection: 'row', 
-        flexWrap: 'wrap', 
-        justifyContent: 'space-between', 
-        marginHorizontal: 16, 
-        backgroundColor: c.card, 
-        padding: 14, 
-        borderRadius: 12, 
-        marginBottom: 16,
-        elevation: 2,
-    },
-    categoryTotalItem: { 
-        width: '48%', 
-        flexDirection: 'row', 
-        justifyContent: 'space-between', 
-        paddingVertical: 6,
-        paddingHorizontal: 8,
-    },
-    categoryTotalLabel: { 
-        fontSize: 12, 
-        color: c.textSecondary,
-        fontWeight: '500'
-    },
-    categoryTotalValue: { 
-        fontSize: 13, 
-        fontWeight: '700',
-        color: c.primaryText
-    },
     floatingButton: {
         position: 'absolute',
         right: 20,
         bottom: 30,
-        backgroundColor: '#5B4FA3',
+        backgroundColor: c.primary,
         width: 64,
         height: 64,
         borderRadius: 32,
@@ -703,7 +550,7 @@ const createStyles = (c: AppColors) => StyleSheet.create({
         width: 36,
         height: 36,
         borderRadius: 18,
-        backgroundColor: '#5B4FA3',
+        backgroundColor: c.primary,
         justifyContent: 'center',
         alignItems: 'center',
         marginRight: 14,
@@ -737,7 +584,7 @@ const createStyles = (c: AppColors) => StyleSheet.create({
         marginVertical: 0,
     },
     emptyStateCTA: {
-        backgroundColor: '#5B4FA3',
+        backgroundColor: c.primary,
         paddingHorizontal: 32,
         paddingVertical: 14,
         borderRadius: 12,
@@ -764,7 +611,7 @@ const createStyles = (c: AppColors) => StyleSheet.create({
         shadowOpacity: 0.12,
         shadowRadius: 6,
         borderTopWidth: 3,
-        borderTopColor: '#5B4FA3',
+        borderTopColor: c.primary,
     },
     chartCardTitle: {
         fontSize: 15,
@@ -773,25 +620,6 @@ const createStyles = (c: AppColors) => StyleSheet.create({
         marginBottom: 12,
     },
     // styles for native-like header placeholder shown on mobile when native header is hidden
-    nativeHeaderPlaceholder: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        // larger height/padding to fully cover native header area on iOS/Android
-        height: Platform.OS === 'ios' ? 88 : 64,
-        paddingTop: Platform.OS === 'ios' ? 44 : 20,
-        backgroundColor: '#111',
-        justifyContent: 'center',
-        alignItems: 'center',
-        zIndex: 99999,
-        elevation: 99999,
-    },
-    nativeHeaderText: {
-        color: '#fff',
-        fontWeight: '700',
-        fontSize: 18,
-    },
     menuPill: {
         position: 'absolute',
         right: 16,
@@ -812,4 +640,10 @@ const createStyles = (c: AppColors) => StyleSheet.create({
     sheetIcon: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center', marginRight: 14 },
     sheetLabel: { flex: 1, fontSize: 16, fontWeight: '600', color: c.text },
     sheetChevron: { fontSize: 20, color: c.textMuted },
+    legendList: { marginTop: 8 },
+    legendRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 7 },
+    legendDot: { width: 12, height: 12, borderRadius: 6, marginRight: 10 },
+    legendName: { flex: 1, fontSize: 14, color: c.text, fontWeight: '500' },
+    legendAmount: { fontSize: 14, color: c.text, fontWeight: '700', marginLeft: 8 },
+    legendPercent: { width: 44, textAlign: 'right', fontSize: 13, color: c.textSecondary, fontWeight: '600' },
 });

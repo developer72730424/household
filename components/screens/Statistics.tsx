@@ -129,7 +129,7 @@ export default function Statistics({ entries, onBack }: StatisticsProps) {
                 <View style={styles.summaryContainer}>
                     <View style={styles.summaryItem}>
                         <Text style={styles.summaryLabel}>収入</Text>
-                        <Text style={[styles.summaryValue, { color: '#27AE60' }]}>¥{statistics.incomeTotal.toLocaleString()}</Text>
+                        <Text style={[styles.summaryValue, { color: c.success }]}>¥{statistics.incomeTotal.toLocaleString()}</Text>
                     </View>
                     <View style={styles.summaryItem}>
                         <Text style={styles.summaryLabel}>総支出</Text>
@@ -137,7 +137,7 @@ export default function Statistics({ entries, onBack }: StatisticsProps) {
                     </View>
                     <View style={styles.summaryItem}>
                         <Text style={styles.summaryLabel}>収支</Text>
-                        <Text style={[styles.summaryValue, { color: statistics.netBalance >= 0 ? '#27AE60' : '#E74C3C' }]}>
+                        <Text style={[styles.summaryValue, { color: statistics.netBalance >= 0 ? c.success : c.danger }]}>
                             {statistics.netBalance >= 0 ? '+' : '-'}¥{Math.abs(statistics.netBalance).toLocaleString()}
                         </Text>
                     </View>
@@ -334,7 +334,7 @@ export default function Statistics({ entries, onBack }: StatisticsProps) {
                                                 <Text style={styles.categoryName}>{item.name}</Text>
                                             </View>
                                         </View>
-                                        <Text style={[styles.categoryAmount, { color: '#27AE60' }]}>¥{item.amount.toLocaleString()}</Text>
+                                        <Text style={[styles.categoryAmount, { color: c.success }]}>¥{item.amount.toLocaleString()}</Text>
                                     </View>
                                 );
                             }}
@@ -355,11 +355,11 @@ export default function Statistics({ entries, onBack }: StatisticsProps) {
 
                 {/* 最高収入カテゴリ */}
                 {statistics.maxIncomeAmount > 0 && (
-                    <View style={[styles.topCategoryContainer, { borderLeftColor: '#27AE60' }]}>
+                    <View style={[styles.topCategoryContainer, { borderLeftColor: c.success }]}>
                         <Text style={styles.topCategoryLabel}>最大収入カテゴリ</Text>
                         <View style={styles.topCategoryContent}>
                             <Text style={styles.topCategoryName}>{statistics.maxIncomeName}</Text>
-                            <Text style={[styles.topCategoryAmount, { color: '#27AE60' }]}>¥{statistics.maxIncomeAmount.toLocaleString()}</Text>
+                            <Text style={[styles.topCategoryAmount, { color: c.success }]}>¥{statistics.maxIncomeAmount.toLocaleString()}</Text>
                         </View>
                     </View>
                 )}
@@ -391,13 +391,7 @@ const createStyles = (c: AppColors) => StyleSheet.create({
     },
     // 新しいヘッダーデザイン用のスタイル
     headerLeft: { flexDirection: 'row', alignItems: 'center' },
-    iconButton: { padding: 6, marginRight: 8, borderRadius: 8 },
-    backIcon: { fontSize: 22, color: c.primaryText, fontWeight: '700' },
-    appIcon: { width: 36, height: 36, borderRadius: 9, backgroundColor: '#5B4FA3', alignItems: 'center', justifyContent: 'center' },
-    appIconText: { color: '#fff', fontWeight: '800', fontSize: 16 },
     title: { fontSize: 20, fontWeight: '700', color: c.text },
-    headerRight: { padding: 6 },
-    headerRightText: { fontSize: 18, color: c.textMuted },
 
     // ホーム画面と同様の月移動 / 月集計用スタイル
     monthNav: { 
@@ -437,28 +431,6 @@ const createStyles = (c: AppColors) => StyleSheet.create({
         marginTop: 0,
     },
 
-    monthlyTotalCard: {
-        backgroundColor: c.card,
-        marginHorizontal: 16,
-        marginTop: 8,
-        marginBottom: 12,
-        paddingVertical: 18,
-        borderRadius: 16,
-        alignItems: 'center',
-        elevation: 3,
-    },
-    monthlyTotalLabel: {
-        fontSize: 12,
-        color: c.textMuted,
-        marginBottom: 6,
-        fontWeight: '600',
-    },
-    monthlyTotalAmount: {
-        fontSize: 22,
-        color: c.primaryText,
-        fontWeight: '800',
-    },
-
     backText: { color: c.primaryText, fontSize: 16, fontWeight: '600' },
 
     summaryContainer: {
@@ -493,7 +465,7 @@ const createStyles = (c: AppColors) => StyleSheet.create({
         borderWidth: 1,
         borderColor: c.border,
     },
-    periodBtnActive: { backgroundColor: '#5B4FA3', borderColor: '#5B4FA3' },
+    periodBtnActive: { backgroundColor: c.primary, borderColor: c.primary },
     periodBtnText: { fontSize: 13, color: c.textSecondary, fontWeight: '600' },
     periodBtnTextActive: { color: '#fff', fontWeight: '700' },
 
@@ -514,10 +486,8 @@ const createStyles = (c: AppColors) => StyleSheet.create({
 
     // Pie layout: center the whole block and add spacing so pie doesn't hug left edge
     pieCenter: { alignItems: 'center', justifyContent: 'center' },
-    pieRow: { width: '100%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 16 },
     // Legend column kept to the right with compact width
     pieLegendColumn: { width: 90, marginLeft: 8, justifyContent: 'flex-start' },
-    pieLegendItemColumn: { flexDirection: 'row', alignItems: 'center', marginBottom: 8, width: '100%' },
     // compact vertical list for legends
     pieLegendWrap: { flexDirection: 'column' },
     colorDotSmall: { width: 10, height: 10, borderRadius: 5, marginRight: 8 },
@@ -562,16 +532,12 @@ const createStyles = (c: AppColors) => StyleSheet.create({
     categoryInfo: { flexDirection: 'row', alignItems: 'center', flex: 1 },
     colorDot: { width: 14, height: 14, borderRadius: 7, marginRight: 12 },
     categoryName: { fontSize: 14, fontWeight: '600', color: c.text },
-    categoryPercentage: { fontSize: 12, color: c.textMuted, marginTop: 2, fontWeight: '500' },
     categoryAmount: { fontSize: 15, fontWeight: '700', color: c.primaryText },
 
     // Pie legend (カテゴリ名のみ表示) スタイル
     pieLegend: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 12 },
-    pieLegendItem: { flexDirection: 'row', alignItems: 'center', marginRight: 12, marginBottom: 8 },
-    pieLegendText: { fontSize: 13, color: c.text, fontWeight: '600' },
     // pieLegendAmount removed: legend now shows only name + percent
     // pieLegendAmount: { fontSize: 12, color: c.textSecondary, marginLeft: 8, fontWeight: '600' },
-    pieLegendPercent: { fontSize: 12, color: c.textSecondary, marginLeft: 8, fontWeight: '600' },
 
     topCategoryContainer: {
         backgroundColor: c.card,
@@ -581,7 +547,7 @@ const createStyles = (c: AppColors) => StyleSheet.create({
         padding: 16,
         elevation: 2,
         borderLeftWidth: 4,
-        borderLeftColor: '#5B4FA3',
+        borderLeftColor: c.primary,
         shadowColor: '#5B4FA3',
         shadowOffset: { width: 0, height: 1 },
         shadowOpacity: 0.1,

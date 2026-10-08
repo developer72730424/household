@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildBackup, parseBackup, shouldRemindBackup, snoozeUntilFrom } from '../utils/backup.ts';
+import { buildBackup, isLegacyBackupKey, parseBackup, shouldRemindBackup, snoozeUntilFrom } from '../utils/backup.ts';
 import type { Entry } from '../utils/entries.ts';
 
 const entry: Entry = { id: 'a', item: 'ランチ', amount: 1200, category: '食費', type: 'expense', date: '2026-10-03' };
@@ -10,6 +10,7 @@ const snapshot = {
     templates: [{ id: 't', name: '朝食', item: 'パン', amount: '300', category: '食費' }],
     recurring: [{ id: 'r', item: '家賃', amount: 80000, type: 'expense' as const, category: '食費', day: 7, lastGenerated: '2026-10' }],
     budget: 50000,
+    budgetOverrides: { '2026-10': 80000 },
 };
 
 test('バックアップを作って、そのまま読み戻せる（往復で同じ）', () => {
@@ -22,6 +23,7 @@ test('バックアップを作って、そのまま読み戻せる（往復で�
     assert.deepEqual(parsed.templates, snapshot.templates);
     assert.deepEqual(parsed.recurring, snapshot.recurring);
     assert.equal(parsed.budget, 50000);
+    assert.deepEqual(parsed.budgetOverrides, { '2026-10': 80000 });
     assert.equal(parsed.skipped, 0);
 });
 
@@ -43,6 +45,7 @@ test('旧バージョンのバックアップ（履歴とカテゴリだけ・�
     assert.equal(parsed.templates, null);          // 含まれない項目は今の値を残す
     assert.equal(parsed.recurring, null);
     assert.equal(parsed.budget, undefined);
+    assert.equal(parsed.budgetOverrides, null);
 });
 
 test('読めない行があれば件数を返す', () => {
@@ -88,4 +91,12 @@ test('バックアップ案内: 「あとで」を押した間は出さず、過
 
 test('バックアップ案内: 日時が壊れていても落ちない', () => {
     assert.equal(shouldRemindBackup({ now: new Date(), lastBackupAt: 'xx', snoozeUntil: 'yy', entryCount: 20 }), true);
+});
+
+test('移行前の控えのキー: 退避したものだけを対象にし、現在のデータは含めない', () => {
+    assert.equal(isLegacyBackupKey('@expense_history_Default_legacy_backup'), true);
+    assert.equal(isLegacyBackupKey('@expense_history_Default_corrupt_1760000000000'), true);
+    assert.equal(isLegacyBackupKey('@expense_history_Default'), false);
+    assert.equal(isLegacyBackupKey('@app_categories_Default'), false);
+    assert.equal(isLegacyBackupKey('@app_budget_overrides_Default'), false);
 });

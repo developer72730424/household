@@ -167,7 +167,7 @@ const createStyles = (c: AppColors) => StyleSheet.create({
         color: c.text
     },
     addBtn: { 
-        backgroundColor: '#34C759', 
+        backgroundColor: c.success, 
         padding: 12, 
         borderRadius: 10, 
         justifyContent: 'center',

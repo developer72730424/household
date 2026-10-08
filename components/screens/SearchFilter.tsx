@@ -147,14 +147,14 @@ export default function SearchFilter({ entries, categories, onBack }: SearchFilt
                         renderItem={({ item }) => {
                             const isIncome = item.type === 'income';
                             return (
-                                <View style={[styles.resultItem, { borderLeftColor: isIncome ? '#27AE60' : '#5B4FA3' }]}>
+                                <View style={[styles.resultItem, { borderLeftColor: isIncome ? c.success : c.primary }]}>
                                     <View>
                                         <Text style={styles.resultItemName}>{item.item}</Text>
                                         <Text style={styles.resultItemMeta}>
                                             {item.category} | {formatDisplayDate(item.date)}
                                         </Text>
                                     </View>
-                                    <Text style={[styles.resultItemAmount, { color: isIncome ? '#27AE60' : '#5B4FA3' }]}>
+                                    <Text style={[styles.resultItemAmount, { color: isIncome ? c.success : c.primaryText }]}>
                                         {isIncome ? '+' : '-'}¥{item.amount.toLocaleString()}
                                     </Text>
                                 </View>
@@ -256,7 +256,7 @@ const createStyles = (c: AppColors) => StyleSheet.create({
         borderWidth: 1,
         borderColor: c.border,
     },
-    categoryTagActive: { backgroundColor: '#5B4FA3', borderColor: '#5B4FA3' },
+    categoryTagActive: { backgroundColor: c.primary, borderColor: c.primary },
     categoryTagText: { fontSize: 13, color: c.textSecondary, fontWeight: '500' },
     categoryTagTextActive: { color: '#fff', fontWeight: '700' },
 
@@ -282,7 +282,7 @@ const createStyles = (c: AppColors) => StyleSheet.create({
         marginTop: 14,
         paddingVertical: 12,
         borderRadius: 10,
-        backgroundColor: '#FF9500',
+        backgroundColor: c.warning,
         alignItems: 'center',
         elevation: 3,
     },
@@ -297,8 +297,8 @@ const createStyles = (c: AppColors) => StyleSheet.create({
     },
     resultCount: { fontSize: 14, color: c.textSecondary, fontWeight: '500' },
     resultTotal: { fontSize: 14, fontWeight: '700', color: c.text },
-    resultIncome: { fontSize: 13, fontWeight: '700', color: '#27AE60' },
-    resultExpense: { fontSize: 13, fontWeight: '700', color: '#E74C3C' },
+    resultIncome: { fontSize: 13, fontWeight: '700', color: c.success },
+    resultExpense: { fontSize: 13, fontWeight: '700', color: c.danger },
 
     resultItem: {
         flexDirection: 'row',
@@ -312,7 +312,7 @@ const createStyles = (c: AppColors) => StyleSheet.create({
         borderRadius: 10,
         elevation: 1,
         borderLeftWidth: 4,
-        borderLeftColor: '#5B4FA3',
+        borderLeftColor: c.primary,
     },
     resultItemName: { fontSize: 15, fontWeight: '600', color: c.text },
     resultItemMeta: { fontSize: 12, color: c.textMuted, marginTop: 3, fontWeight: '500' },

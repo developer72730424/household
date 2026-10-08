@@ -18,6 +18,8 @@ interface ExportProps {
     onResetData: () => Promise<void>;
     onRestore: (parsed: Extract<ParsedBackup, { ok: true }>) => Promise<void>;
     onBackedUp: () => void;
+    hasLegacyBackup: boolean;
+    onDeleteLegacyBackups: () => Promise<void>;
 }
 
 const formatBackupTime = (iso: string | null): string => {
@@ -27,7 +29,7 @@ const formatBackupTime = (iso: string | null): string => {
     return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
 };
 
-export default function Export({ entries, categories, lastBackupAt, getSnapshot, onBack, onResetData, onRestore, onBackedUp }: ExportProps) {
+export default function Export({ entries, categories, lastBackupAt, getSnapshot, onBack, onResetData, onRestore, onBackedUp, hasLegacyBackup, onDeleteLegacyBackups }: ExportProps) {
     const c = useAppColors();
     const styles = useMemo(() => createStyles(c), [c]);
     const [isExporting, setIsExporting] = useState(false);
@@ -178,6 +180,29 @@ export default function Export({ entries, categories, lastBackupAt, getSnapshot,
     };
 
     const restoreFromJSON = () => confirmRestore(restoreText);
+
+    // 旧バージョンのデータを新しい形式へ移行したときに端末内へ残した控えを消す
+    const deleteLegacy = () => {
+        Alert.alert(
+            '移行前のデータの控えを削除',
+            'アプリの更新で形式を変えたときに、念のため残しておいた古い形式のデータを削除します。いまのデータには影響しません。削除すると、この控えからは元に戻せません。',
+            [
+                { text: 'キャンセル', style: 'cancel' },
+                {
+                    text: '削除',
+                    style: 'destructive',
+                    onPress: async () => {
+                        try {
+                            await onDeleteLegacyBackups();
+                            Alert.alert('完了', '移行前のデータの控えを削除しました。');
+                        } catch {
+                            Alert.alert('エラー', '削除に失敗しました');
+                        }
+                    },
+                },
+            ],
+        );
+    };
 
     // データをリセット
     const resetData = () => {
@@ -330,6 +355,21 @@ export default function Export({ entries, categories, lastBackupAt, getSnapshot,
                     </View>
                 </View>
 
+                {/* 移行前の控え（あるときだけ表示） */}
+                {hasLegacyBackup && (
+                    <View style={styles.section}>
+                        <Text style={styles.sectionTitle}>🗂️ 移行前のデータの控え</Text>
+                        <View style={styles.exportCard}>
+                            <Text style={styles.exportDesc}>
+                                アプリの更新でデータの形式を変えたとき、念のため古い形式のデータを端末内に残してあります。いまのデータに問題がなければ削除できます。
+                            </Text>
+                            <TouchableOpacity style={[styles.exportBtn, styles.exportBtnSecondary, { marginTop: 10 }]} onPress={deleteLegacy}>
+                                <Text style={styles.exportBtnText2}>控えを削除する</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                )}
+
                 {/* 危険なアクション */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>⚠️ 危険なアクション</Text>
@@ -404,7 +444,7 @@ const createStyles = (c: AppColors) => StyleSheet.create({
         marginBottom: 16,
         elevation: 2,
         borderLeftWidth: 4,
-        borderLeftColor: '#5B4FA3',
+        borderLeftColor: c.primary,
     },
     summaryTitle: { fontSize: 15, fontWeight: '700', marginBottom: 12, color: c.text },
     summaryRow: {
@@ -445,13 +485,13 @@ const createStyles = (c: AppColors) => StyleSheet.create({
         alignItems: 'center',
         elevation: 2,
     },
-    exportBtnPrimary: { backgroundColor: '#5B4FA3' },
+    exportBtnPrimary: { backgroundColor: c.primary },
     exportBtnSecondary: { backgroundColor: c.chip, borderWidth: 1, borderColor: c.border },
     exportBtnText: { fontSize: 13, color: '#fff', fontWeight: '700' },
     exportBtnText2: { fontSize: 13, color: c.text, fontWeight: '700' },
 
     dangerButton: {
-        backgroundColor: '#FF3B30',
+        backgroundColor: c.danger,
         borderRadius: 12,
         paddingVertical: 14,
         alignItems: 'center',
@@ -462,12 +502,12 @@ const createStyles = (c: AppColors) => StyleSheet.create({
 
     warningText: {
         fontSize: 12,
-        color: '#D32F2F',
+        color: c.danger,
         padding: 12,
         backgroundColor: c.dangerBg,
         borderRadius: 10,
         borderLeftWidth: 4,
-        borderLeftColor: '#FF3B30',
+        borderLeftColor: c.danger,
         fontWeight: '500'
     },
 
@@ -476,7 +516,7 @@ const createStyles = (c: AppColors) => StyleSheet.create({
         borderRadius: 12,
         padding: 14,
         borderLeftWidth: 4,
-        borderLeftColor: '#5B4FA3',
+        borderLeftColor: c.primary,
     },
     infoTitle: { fontSize: 13, fontWeight: '700', marginBottom: 8, color: c.primaryText },
     infoText: { fontSize: 12, color: c.primaryText, marginBottom: 5, lineHeight: 18, fontWeight: '500' },

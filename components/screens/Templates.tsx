@@ -283,11 +283,11 @@ const createStyles = (c: AppColors) => StyleSheet.create({
         borderColor: c.border
     },
     catBtnActive: {
-        backgroundColor: '#5B4FA3',
-        borderColor: '#5B4FA3'
+        backgroundColor: c.primary,
+        borderColor: c.primary
     },
     mainButton: {
-        backgroundColor: '#5B4FA3',
+        backgroundColor: c.primary,
         padding: 18,
         borderRadius: 12,
         alignItems: 'center',
@@ -300,7 +300,7 @@ const createStyles = (c: AppColors) => StyleSheet.create({
         fontWeight: '700',
     },
     addButton: {
-        backgroundColor: '#34C759',
+        backgroundColor: c.success,
         padding: 16,
         borderRadius: 12,
         alignItems: 'center',
@@ -332,7 +332,7 @@ const createStyles = (c: AppColors) => StyleSheet.create({
         alignItems: 'center',
         elevation: 2,
         borderLeftWidth: 4,
-        borderLeftColor: '#5B4FA3'
+        borderLeftColor: c.primary
     },
     templateContent: {
         flex: 1,
@@ -349,7 +349,7 @@ const createStyles = (c: AppColors) => StyleSheet.create({
         fontWeight: '500'
     },
     deleteBtn: {
-        backgroundColor: '#FF3B30',
+        backgroundColor: c.danger,
         paddingHorizontal: 14,
         paddingVertical: 10,
         borderRadius: 8,

@@ -34,6 +34,8 @@ plugins/             Expo config plugin（Xcode 27 ビルド対策）
 - 記録を削除したら、`deleteEntry` の戻り値を `UndoSnackbar` に渡して「元に戻す」を出す（`restoreEntry` で戻せる）。
 - 保存は **`useAppData()` の操作関数**（`addEntry` など）だけで行う。`AsyncStorage` を画面から直接触らない。
 - 保存形式を変えるときは、`utils/entries.ts` の `normalizeEntry` 等で旧形式も読めるようにし、起動時の移行（`context/app-data.tsx` の `loadAll`）を更新する。バックアップ（`utils/backup.ts`）も旧バージョンを読めること。
+- 予算は「毎月共通」（`budget`）と「その月だけ」（`budgetOverrides`、キーは `YYYY-MM`）の2段構え。表示に使う値は必ず `effectiveBudget()`（`utils/budget.ts`）で求める。バックアップにも両方入る。
+- 移行前に退避した履歴（`_legacy_backup` / `_corrupt_○○`）は、`hasLegacyBackup` が true のときだけデータ管理画面に「控えを削除」を出す。キーの判定は `isLegacyBackupKey()`。
 - 固定費（`RecurringRule`）にも `type`（`'income' | 'expense'`）がある。収入の固定費はカテゴリが常に「収入」で、自動登録されると収入の記録になる。`type` が無い古いデータは `normalizeRule` で支出として読む。
 - バックアップのファイル保存は `expo-file-system`（キャッシュに書く）→ `expo-sharing`（共有シートで「ファイル」へ）、復元は `expo-document-picker` → `File.text()` → `parseBackup`。ファイル名と選択ファイルの検査は `utils/backup-file.ts`。これらはネイティブモジュールなので、追加・更新したら iOS の再ビルドが必要。
 - 保存キー: `@expense_history_Default`（履歴）, `@app_categories_Default`, `@app_templates_Default`, `@app_recurring_Default`, `@app_budget_Default`, `@app_last_backup_at`, `@app_backup_snooze_until`。旧形式の履歴は `@expense_history_Default_legacy_backup` に退避される。
@@ -44,8 +46,11 @@ plugins/             Expo config plugin（Xcode 27 ビルド対策）
 3. 遷移は `router.push('/○○')`。ホームの `MENU_ITEMS`（`app/index.tsx`）に追加すればメニューから開ける。
 4. 集計や判定のロジックは画面に書かず `utils/` に置いてテストを書く。
 
+## 円グラフ
+- `react-native-chart-kit` の標準凡例は「金額 カテゴリ名」の順で読みにくいので使わず、`hasLegend={false}` にして凡例を自前で描く（色の点・名前・金額・割合）。中央に描くには `paddingLeft={String(width / 4)}` を指定する。
+
 ## 配色（ダークモード）
-- 色は `useAppColors()`（`hooks/use-app-colors.ts`）で取り、`StyleSheet` は `const createStyles = (c: AppColors) => StyleSheet.create({...})` + `useMemo(() => createStyles(c), [c])` の形にする。色の直書きはしない（ブランドの白文字 `#fff` などは可）。
+- 色は `useAppColors()`（`hooks/use-app-colors.ts`）で取り、`StyleSheet` は `const createStyles = (c: AppColors) => StyleSheet.create({...})` + `useMemo(() => createStyles(c), [c])` の形にする。色の直書きはしない（ブランドの白文字 `#fff`、メニューの装飾アイコンの色、円グラフの系列色は可）。
 - チャートの色は `chartRgb` / `chartLabelRgb` を使う。
 
 ## 開発コマンド

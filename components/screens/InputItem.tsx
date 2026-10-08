@@ -191,8 +191,8 @@ const createStyles = (c: AppColors) => StyleSheet.create({
         borderColor: c.border
     },
     catBtnActive: { 
-        backgroundColor: '#5B4FA3',
-        borderColor: '#5B4FA3'
+        backgroundColor: c.primary,
+        borderColor: c.primary
     },
     dateSelector: { 
         padding: 16, 
@@ -206,7 +206,7 @@ const createStyles = (c: AppColors) => StyleSheet.create({
         fontWeight: '500'
     },
     mainAddButton: { 
-        backgroundColor: '#5B4FA3', 
+        backgroundColor: c.primary, 
         padding: 18, 
         borderRadius: 12, 
         marginTop: 32, 
@@ -222,40 +222,13 @@ const createStyles = (c: AppColors) => StyleSheet.create({
         fontSize: 16, 
         fontWeight: '700' 
     },
-    addCategoryContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginVertical: 12,
-        gap: 10
-    },
-    smallInput: {
-        flex: 1,
-        backgroundColor: c.background,
-        padding: 12,
-        borderRadius: 8,
-        borderWidth: 1,
-        borderColor: c.border,
-        color: c.text
-    },
-    miniAddBtn: {
-        backgroundColor: '#34C759',
-        paddingHorizontal: 16,
-        paddingVertical: 12,
-        borderRadius: 8,
-        elevation: 3,
-    },
-    templateRow: {
-        flexDirection: 'row',
-        gap: 12,
-        marginVertical: 12,
-    },
     templateQuick: {
         flex: 1,
         backgroundColor: c.tintBg,
         padding: 12,
         borderRadius: 10,
         borderWidth: 1,
-        borderColor: '#5B4FA3',
+        borderColor: c.primary,
         alignItems: 'center',
         elevation: 2,
     },

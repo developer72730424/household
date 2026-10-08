@@ -2,7 +2,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, AppState } from 'react-native';
 
-import { snoozeUntilFrom, type AppSnapshot, type ParsedBackup } from '@/utils/backup';
+import { isLegacyBackupKey, LEGACY_BACKUP_KEY, snoozeUntilFrom, type AppSnapshot, type ParsedBackup } from '@/utils/backup';
+import { normalizeOverrides, withMonthBudget, type BudgetOverrides } from '@/utils/budget';
 import { removeCategory, renameCategory } from '@/utils/categories';
 import {
     hasLegacyShape, INCOME_LABEL, newEntryId, normalizeCategories, normalizeEntries, normalizeTemplates, restoreDeleted,
@@ -16,12 +17,11 @@ const KEYS = {
     categories: '@app_categories_Default',
     templates: '@app_templates_Default',
     budget: '@app_budget_Default',
+    budgetOverrides: '@app_budget_overrides_Default',
     recurring: '@app_recurring_Default',
     lastBackupAt: '@app_last_backup_at',
     backupSnoozeUntil: '@app_backup_snooze_until',
 } as const;
-// 新形式へ移行する前の履歴をそのまま残しておく場所（移行で問題が起きても元に戻せる）
-const LEGACY_BACKUP_KEY = '@expense_history_Default_legacy_backup';
 
 export interface AppData {
     entries: Entry[];
@@ -29,8 +29,11 @@ export interface AppData {
     templates: Template[];
     recurring: RecurringRule[];
     budget: number | null;
+    budgetOverrides: BudgetOverrides; // その月だけの予算（キーは YYYY-MM）
     lastBackupAt: string | null;
     backupSnoozeUntil: string | null;
+    // 旧形式からの移行前に退避した履歴・壊れて読めなかったデータの控えがあるか
+    hasLegacyBackup: boolean;
 }
 
 const EMPTY: AppData = {
@@ -39,8 +42,10 @@ const EMPTY: AppData = {
     templates: [],
     recurring: [],
     budget: null,
+    budgetOverrides: {},
     lastBackupAt: null,
     backupSnoozeUntil: null,
+    hasLegacyBackup: false,
 };
 
 export interface EntryInput {
@@ -66,11 +71,13 @@ interface AppDataActions {
     addTemplate: (template: Template) => void;
     deleteTemplate: (id: string) => void;
     setBudget: (budget: number | null) => void;
+    setMonthBudget: (month: string, budget: number | null) => void;
     addRecurring: (rule: RecurringRule) => void;
     updateRecurring: (rule: RecurringRule) => void;
     deleteRecurring: (id: string) => void;
     restoreBackup: (parsed: Extract<ParsedBackup, { ok: true }>) => Promise<void>;
     resetEntries: () => Promise<void>;
+    deleteLegacyBackups: () => Promise<void>;
     markBackedUp: () => void;
     snoozeBackup: () => void;
     getSnapshot: () => AppSnapshot;
@@ -143,10 +150,14 @@ async function loadAll(): Promise<{ data: AppData; notice: string | null }> {
         writes.push(AsyncStorage.setItem(KEYS.recurring, JSON.stringify(recurring)));
     }
 
+    const overridesParsed = parseJson(raw[KEYS.budgetOverrides]);
+    const budgetOverrides = normalizeOverrides(overridesParsed.ok ? overridesParsed.value : undefined);
+
     const budgetNumber = Number(raw[KEYS.budget]);
     const budget = raw[KEYS.budget] != null && Number.isFinite(budgetNumber) && budgetNumber > 0 ? Math.floor(budgetNumber) : null;
 
     await Promise.all(writes);
+    const hasLegacyBackup = (await AsyncStorage.getAllKeys()).some(isLegacyBackupKey);
 
     return {
         data: {
@@ -155,14 +166,19 @@ async function loadAll(): Promise<{ data: AppData; notice: string | null }> {
             templates,
             recurring,
             budget,
+            budgetOverrides,
             lastBackupAt: raw[KEYS.lastBackupAt] ?? null,
             backupSnoozeUntil: raw[KEYS.backupSnoozeUntil] ?? null,
+            hasLegacyBackup,
         },
         notice: notices.length > 0 ? notices.join('\n') : null,
     };
 }
 
-async function writeKey(key: keyof AppData, value: AppData[keyof AppData]): Promise<void> {
+// 端末に保存する項目（hasLegacyBackup は保存せず、起動時に調べる）
+type PersistedKey = keyof typeof KEYS;
+
+async function writeKey(key: PersistedKey, value: AppData[PersistedKey]): Promise<void> {
     const storageKey = KEYS[key];
     if (value === null) await AsyncStorage.removeItem(storageKey);
     else if (typeof value === 'number') await AsyncStorage.setItem(storageKey, String(value));
@@ -197,11 +213,11 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         return () => { cancelled = true; };
     }, []);
 
-    const commit = useCallback((patch: Partial<AppData>): Promise<void> => {
+    const commit = useCallback((patch: Partial<Pick<AppData, PersistedKey>>): Promise<void> => {
         const next = { ...dataRef.current, ...patch };
         dataRef.current = next;
         setData(next);
-        const keys = Object.keys(patch) as (keyof AppData)[];
+        const keys = Object.keys(patch) as PersistedKey[];
         const values = keys.map(k => next[k]);
         queue.current = queue.current
             .then(() => Promise.all(keys.map((k, i) => writeKey(k, values[i]))).then(() => undefined))
@@ -289,6 +305,9 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         setBudget: (budget) => {
             void commit({ budget });
         },
+        setMonthBudget: (month, budget) => {
+            void commit({ budgetOverrides: withMonthBudget(dataRef.current.budgetOverrides, month, budget) });
+        },
         addRecurring: (rule) => {
             void commit({ recurring: [...dataRef.current.recurring, rule] });
         },
@@ -299,14 +318,22 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
             void commit({ recurring: dataRef.current.recurring.filter(r => r.id !== id) });
         },
         restoreBackup: (parsed) => {
-            const patch: Partial<AppData> = { entries: parsed.entries };
+            const patch: Partial<Pick<AppData, PersistedKey>> = { entries: parsed.entries };
             if (parsed.categories) patch.categories = parsed.categories;
             if (parsed.templates) patch.templates = parsed.templates;
             if (parsed.recurring) patch.recurring = parsed.recurring;
             if (parsed.budget !== undefined) patch.budget = parsed.budget;
+            if (parsed.budgetOverrides) patch.budgetOverrides = parsed.budgetOverrides;
             return commit(patch);
         },
         resetEntries: () => commit({ entries: [] }),
+        // 移行前の控え・壊れたデータの退避を端末から消す（復元に使えなくなるため、画面側で確認を取る）
+        deleteLegacyBackups: async () => {
+            const keys = (await AsyncStorage.getAllKeys()).filter(isLegacyBackupKey);
+            if (keys.length > 0) await AsyncStorage.multiRemove(keys);
+            dataRef.current = { ...dataRef.current, hasLegacyBackup: false };
+            setData(dataRef.current);
+        },
         markBackedUp: () => {
             void commit({ lastBackupAt: new Date().toISOString(), backupSnoozeUntil: null });
         },
@@ -315,7 +342,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         },
         getSnapshot: () => {
             const d = dataRef.current;
-            return { entries: d.entries, categories: d.categories, templates: d.templates, recurring: d.recurring, budget: d.budget };
+            return { entries: d.entries, categories: d.categories, templates: d.templates, recurring: d.recurring, budget: d.budget, budgetOverrides: d.budgetOverrides };
         },
     }), [commit]);
 

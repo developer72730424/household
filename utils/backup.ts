@@ -2,6 +2,7 @@
 import {
     normalizeCategories, normalizeEntries, normalizeTemplates, summarize, type Entry, type Template,
 } from './entries.ts';
+import { normalizeOverrides, type BudgetOverrides } from './budget.ts';
 import { normalizeRules, type RecurringRule } from './recurring.ts';
 
 export const BACKUP_VERSION = 2;
@@ -17,6 +18,7 @@ export interface AppSnapshot {
     templates: Template[];
     recurring: RecurringRule[];
     budget: number | null;
+    budgetOverrides: BudgetOverrides;
 }
 
 export interface BackupPayload {
@@ -29,6 +31,7 @@ export interface BackupPayload {
     templates: Template[];
     recurring: RecurringRule[];
     budget: number | null;
+    budgetOverrides: BudgetOverrides;
 }
 
 export function buildBackup(data: AppSnapshot, now: Date = new Date()): BackupPayload {
@@ -43,6 +46,7 @@ export function buildBackup(data: AppSnapshot, now: Date = new Date()): BackupPa
         templates: data.templates,
         recurring: data.recurring,
         budget: data.budget,
+        budgetOverrides: data.budgetOverrides,
     };
 }
 
@@ -56,6 +60,7 @@ export type ParsedBackup =
         templates: Template[] | null;
         recurring: RecurringRule[] | null;
         budget: number | null | undefined;
+        budgetOverrides: BudgetOverrides | null;
     }
     | { ok: false; error: string };
 
@@ -89,8 +94,16 @@ export function parseBackup(text: string): ParsedBackup {
         templates: Array.isArray(p.templates) ? normalizeTemplates(p.templates) : null,
         recurring: Array.isArray(p.recurring) ? normalizeRules(p.recurring) : null,
         budget,
+        budgetOverrides: p.budgetOverrides && typeof p.budgetOverrides === 'object' ? normalizeOverrides(p.budgetOverrides) : null,
     };
 }
+
+// 旧形式からの移行前に退避した履歴（_legacy_backup）と、壊れて読めなかった履歴の退避（_corrupt_○○）の保存キー。
+// 現在の履歴のキー（@expense_history_Default）そのものは含まない
+export const LEGACY_BACKUP_KEY = '@expense_history_Default_legacy_backup';
+export const CORRUPT_BACKUP_PREFIX = '@expense_history_Default_corrupt_';
+export const isLegacyBackupKey = (key: string): boolean =>
+    key === LEGACY_BACKUP_KEY || key.startsWith(CORRUPT_BACKUP_PREFIX);
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 

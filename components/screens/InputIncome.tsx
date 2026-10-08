@@ -101,7 +101,7 @@ const createStyles = (c: AppColors) => StyleSheet.create({
     label: { fontSize: 15, color: c.textSecondary, marginBottom: 8, marginTop: 14, fontWeight: '600' },
     input: { backgroundColor: c.background, padding: 14, borderRadius: 10, borderWidth: 1, borderColor: c.border, marginBottom: 12, color: c.text, fontSize: 15 },
     dateSelector: { padding: 16, backgroundColor: c.background, borderRadius: 10, marginTop: 12, borderWidth: 1, borderColor: c.border },
-    mainAddButton: { backgroundColor: '#34C759', padding: 18, borderRadius: 12, marginTop: 32, alignItems: 'center' },
+    mainAddButton: { backgroundColor: c.success, padding: 18, borderRadius: 12, marginTop: 32, alignItems: 'center' },
     mainAddButtonText: { color: '#fff', fontSize: 16, fontWeight: '700' },
     buttonContainer: { paddingHorizontal: 16, paddingVertical: 16, backgroundColor: c.card, borderTopWidth: 1, borderTopColor: c.border },
     cancelButton: { backgroundColor: c.chip, padding: 14, borderRadius: 10, marginTop: 10, alignItems: 'center', borderWidth: 1.5, borderColor: c.border },

@@ -5,7 +5,7 @@ import { useAppData } from '@/context/app-data';
 import { useGoBack } from '@/hooks/use-go-back';
 
 export default function ExportRoute() {
-    const { entries, categories, lastBackupAt, getSnapshot, resetEntries, restoreBackup, markBackedUp } = useAppData();
+    const { entries, categories, lastBackupAt, hasLegacyBackup, getSnapshot, resetEntries, restoreBackup, markBackedUp, deleteLegacyBackups } = useAppData();
     return (
         <Export
             entries={entries}
@@ -16,6 +16,8 @@ export default function ExportRoute() {
             onResetData={resetEntries}
             onRestore={restoreBackup}
             onBackedUp={markBackedUp}
+            hasLegacyBackup={hasLegacyBackup}
+            onDeleteLegacyBackups={deleteLegacyBackups}
         />
     );
 }

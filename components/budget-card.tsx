@@ -3,21 +3,29 @@ import { Keyboard, Modal, StyleSheet, Text, TextInput, TouchableOpacity, View } 
 
 import { AppColors, useAppColors } from '@/hooks/use-app-colors';
 
+export type BudgetScope = 'month' | 'default';
+
 interface BudgetCardProps {
-    budget: number | null; // 未設定は null
+    monthLabel: string;       // 例: "10月"
+    budget: number | null;    // その月に適用される予算。未設定は null
+    isOverride: boolean;      // その月だけの予算か（false なら毎月共通の予算）
     spent: number;
-    onChangeBudget: (budget: number | null) => void;
+    // scope が 'month' ならその月だけ、'default' なら毎月共通の予算を変更する。amount が null なら解除
+    onSave: (amount: number | null, scope: BudgetScope) => void;
 }
 
 // 月間予算の進捗を表示するカード。タップで予算を設定・変更できます
-export default function BudgetCard({ budget, spent, onChangeBudget }: BudgetCardProps) {
+export default function BudgetCard({ monthLabel, budget, isOverride, spent, onSave }: BudgetCardProps) {
     const c = useAppColors();
     const styles = useMemo(() => createStyles(c), [c]);
     const [modalVisible, setModalVisible] = useState(false);
     const [draft, setDraft] = useState('');
+    // 編集の対象: その月だけ／毎月共通
+    const [scope, setScope] = useState<BudgetScope>('default');
 
     const openEditor = () => {
         setDraft(budget ? String(budget) : '');
+        setScope(isOverride ? 'month' : 'default');
         setModalVisible(true);
     };
 
@@ -26,8 +34,8 @@ export default function BudgetCard({ budget, spent, onChangeBudget }: BudgetCard
             .replace(/[０-９]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0))
             .replace(/[,，\s]/g, '');
         const value = Number(normalized);
-        // 空欄または0なら予算を解除
-        onChangeBudget(normalized === '' || !Number.isFinite(value) || value <= 0 ? null : Math.floor(value));
+        // 空欄または0なら解除（その月だけの設定なら共通の予算に戻り、共通の予算なら未設定になる）
+        onSave(normalized === '' || !Number.isFinite(value) || value <= 0 ? null : Math.floor(value), scope);
         Keyboard.dismiss();
         setModalVisible(false);
     };
@@ -43,7 +51,7 @@ export default function BudgetCard({ budget, spent, onChangeBudget }: BudgetCard
                 {budget ? (
                     <>
                         <View style={styles.row}>
-                            <Text style={styles.label}>今月の予算</Text>
+                            <Text style={styles.label}>{monthLabel}の予算{isOverride ? '（この月だけ）' : ''}</Text>
                             <Text style={styles.budgetText}>¥{budget.toLocaleString()}</Text>
                         </View>
                         <View style={styles.barTrack}>
@@ -57,7 +65,7 @@ export default function BudgetCard({ budget, spent, onChangeBudget }: BudgetCard
                         </View>
                     </>
                 ) : (
-                    <Text style={styles.placeholder}>🎯 タップして今月の予算を設定</Text>
+                    <Text style={styles.placeholder}>🎯 タップして予算を設定</Text>
                 )}
             </TouchableOpacity>
 
@@ -65,7 +73,22 @@ export default function BudgetCard({ budget, spent, onChangeBudget }: BudgetCard
                 <View style={styles.overlay}>
                     <View style={styles.modal}>
                         <Text style={styles.modalTitle}>月間予算を設定</Text>
-                        <Text style={styles.modalDesc}>毎月共通の予算です。空欄で保存すると解除されます。</Text>
+                        <View style={styles.scopeRow}>
+                            {([['default', '毎月共通'], ['month', `${monthLabel}だけ`]] as const).map(([key, label]) => (
+                                <TouchableOpacity
+                                    key={key}
+                                    style={[styles.scopeBtn, scope === key && styles.scopeBtnActive]}
+                                    onPress={() => setScope(key)}
+                                >
+                                    <Text style={[styles.scopeText, scope === key && styles.scopeTextActive]}>{label}</Text>
+                                </TouchableOpacity>
+                            ))}
+                        </View>
+                        <Text style={styles.modalDesc}>
+                            {scope === 'default'
+                                ? '毎月共通の予算です。「その月だけ」の設定がある月はそちらが優先されます。'
+                                : `${monthLabel}だけの予算です。空欄で保存すると、毎月共通の予算に戻ります。`}
+                        </Text>
                         <TextInput
                             style={styles.input}
                             placeholder="例：100000"
@@ -142,4 +165,9 @@ const createStyles = (c: AppColors) => StyleSheet.create({
     cancelBtnText: { color: c.textSecondary, fontWeight: '600' },
     saveBtn: { backgroundColor: c.primary },
     saveBtnText: { color: '#fff', fontWeight: '700' },
+    scopeRow: { flexDirection: 'row', gap: 8, marginBottom: 10 },
+    scopeBtn: { flex: 1, paddingVertical: 9, borderRadius: 10, alignItems: 'center', backgroundColor: c.chip, borderWidth: 1, borderColor: c.border },
+    scopeBtnActive: { backgroundColor: c.primary, borderColor: c.primary },
+    scopeText: { fontSize: 14, fontWeight: '600', color: c.textSecondary },
+    scopeTextActive: { color: '#fff', fontWeight: '700' },
 });
