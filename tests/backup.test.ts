@@ -8,7 +8,7 @@ const snapshot = {
     entries: [entry],
     categories: ['食費'],
     templates: [{ id: 't', name: '朝食', item: 'パン', amount: '300', category: '食費' }],
-    recurring: [{ id: 'r', item: '家賃', amount: 80000, category: '食費', day: 7, lastGenerated: '2026-10' }],
+    recurring: [{ id: 'r', item: '家賃', amount: 80000, type: 'expense' as const, category: '食費', day: 7, lastGenerated: '2026-10' }],
     budget: 50000,
 };
 

@@ -10,7 +10,7 @@ const data = (): CategoryData => ({
     categories: ['食費', '日用品', 'その他'],
     entries: [entry('a', '食費'), entry('b', '食費'), entry('c', '日用品'), entry('s', '収入', 'income')],
     templates: [{ id: 't', name: '朝', item: 'パン', amount: '300', category: '食費' }],
-    recurring: [{ id: 'r', item: '外食', amount: 5000, category: '食費', day: 5, lastGenerated: '2026-09' }],
+    recurring: [{ id: 'r', item: '外食', amount: 5000, type: 'expense', category: '食費', day: 5, lastGenerated: '2026-09' }],
 });
 
 test('名前変更: 記録・テンプレート・固定費のカテゴリ名もいっしょに変わる', () => {

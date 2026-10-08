@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Alert, FlatList, Keyboard, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 import { AppColors, useAppColors } from '@/hooks/use-app-colors';
-import { newEntryId, validateAmountInput } from '@/utils/entries';
+import { INCOME_LABEL, newEntryId, validateAmountInput, type EntryType } from '@/utils/entries';
 import { initialLastGenerated, type RecurringRule } from '@/utils/recurring';
 
 interface RecurringProps {
@@ -21,6 +21,9 @@ export default function Recurring({ rules, categories, onAdd, onUpdate, onDelete
     const [amount, setAmount] = useState('');
     const [day, setDay] = useState('');
     const [category, setCategory] = useState(categories[0] ?? '食費');
+    // 支出（家賃など）か収入（給与など）か
+    const [type, setType] = useState<EntryType>('expense');
+    const isIncome = type === 'income';
     // 編集中の固定費（null のときは新規追加）
     const [editing, setEditing] = useState<RecurringRule | null>(null);
 
@@ -33,6 +36,7 @@ export default function Recurring({ rules, categories, onAdd, onUpdate, onDelete
         setAmount('');
         setDay('');
         setCategory(categories[0] ?? '食費');
+        setType('expense');
         Keyboard.dismiss();
     };
 
@@ -41,7 +45,9 @@ export default function Recurring({ rules, categories, onAdd, onUpdate, onDelete
         setItem(rule.item);
         setAmount(String(rule.amount));
         setDay(String(rule.day));
-        setCategory(rule.category);
+        setType(rule.type);
+        // 収入にはカテゴリが無いので、支出に切り替えたときの初期値は先頭のカテゴリ
+        setCategory(rule.type === 'income' ? categories[0] ?? '食費' : rule.category);
     };
 
     const handleAdd = () => {
@@ -62,13 +68,14 @@ export default function Recurring({ rules, categories, onAdd, onUpdate, onDelete
         }
         if (editing) {
             // 登録済みの月（lastGenerated）はそのまま。金額・発生日を変えても、すでに登録した分は重複しない
-            onUpdate({ ...editing, item: item.trim(), amount: amountCheck.value, category, day: dayValue });
+            onUpdate({ ...editing, item: item.trim(), amount: amountCheck.value, type, category: isIncome ? INCOME_LABEL : category, day: dayValue });
         } else {
             onAdd({
                 id: newEntryId(),
                 item: item.trim(),
                 amount: amountCheck.value,
-                category,
+                type,
+                category: isIncome ? INCOME_LABEL : category,
                 day: dayValue,
                 lastGenerated: initialLastGenerated(dayValue),
             });
@@ -90,7 +97,8 @@ export default function Recurring({ rules, categories, onAdd, onUpdate, onDelete
         ]);
     };
 
-    const monthlyTotal = rules.reduce((sum, r) => sum + r.amount, 0);
+    const monthlyIncome = rules.filter(r => r.type === 'income').reduce((sum, r) => sum + r.amount, 0);
+    const monthlyExpense = rules.filter(r => r.type === 'expense').reduce((sum, r) => sum + r.amount, 0);
 
     return (
         <View style={styles.container}>
@@ -108,9 +116,21 @@ export default function Recurring({ rules, categories, onAdd, onUpdate, onDelete
                     <>
                         <View style={styles.card}>
                             <Text style={styles.desc}>
-                                家賃・サブスクなど毎月の支出を登録すると、発生日に自動で履歴へ追加されます。
+                                家賃・サブスクなどの支出や、給与などの収入を登録すると、発生日に自動で履歴へ追加されます。
                             </Text>
-                            <TextInput style={styles.input} placeholder="品目（例：家賃）" placeholderTextColor={c.textMuted} value={item} onChangeText={setItem} />
+                            <View style={styles.typeRow}>
+                                {(['expense', 'income'] as const).map(t => (
+                                    <TouchableOpacity
+                                        key={t}
+                                        style={[styles.typeBtn, type === t && (t === 'income' ? styles.typeBtnIncome : styles.typeBtnActive)]}
+                                        onPress={() => setType(t)}
+                                        accessibilityLabel={t === 'income' ? '収入' : '支出'}
+                                    >
+                                        <Text style={[styles.typeBtnText, type === t && styles.typeBtnTextActive]}>{t === 'income' ? '収入' : '支出'}</Text>
+                                    </TouchableOpacity>
+                                ))}
+                            </View>
+                            <TextInput style={styles.input} placeholder={isIncome ? '収入元（例：給与）' : '品目（例：家賃）'} placeholderTextColor={c.textMuted} value={item} onChangeText={setItem} />
                             <View style={styles.inlineRow}>
                                 <TextInput
                                     style={[styles.input, { flex: 2, marginRight: 8 }]}
@@ -130,6 +150,7 @@ export default function Recurring({ rules, categories, onAdd, onUpdate, onDelete
                                     maxLength={2}
                                 />
                             </View>
+                            {!isIncome && (
                             <View style={styles.categoryRow}>
                                 {categoryOptions.map(cat => (
                                     <TouchableOpacity
@@ -141,6 +162,7 @@ export default function Recurring({ rules, categories, onAdd, onUpdate, onDelete
                                     </TouchableOpacity>
                                 ))}
                             </View>
+                            )}
                             <TouchableOpacity style={styles.addBtn} onPress={handleAdd}>
                                 <Text style={styles.addBtnText}>{editing ? '✓ 固定費を更新' : '＋ 固定費を追加'}</Text>
                             </TouchableOpacity>
@@ -151,22 +173,26 @@ export default function Recurring({ rules, categories, onAdd, onUpdate, onDelete
                             )}
                         </View>
                         {rules.length > 0 && (
-                            <Text style={styles.sectionTitle}>登録中の固定費（月 ¥{monthlyTotal.toLocaleString()}）</Text>
+                            <Text style={styles.sectionTitle}>
+                                登録中の固定費（毎月 収入 ¥{monthlyIncome.toLocaleString()} / 支出 ¥{monthlyExpense.toLocaleString()}）
+                            </Text>
                         )}
                     </>
                 }
                 ListEmptyComponent={<Text style={styles.empty}>まだ固定費が登録されていません</Text>}
                 renderItem={({ item: rule }) => (
                     <TouchableOpacity
-                        style={[styles.listItem, editing?.id === rule.id && styles.listItemEditing]}
+                        style={[styles.listItem, rule.type === 'income' && { borderLeftColor: c.success }, editing?.id === rule.id && styles.listItemEditing]}
                         onPress={() => startEdit(rule)}
                         accessibilityLabel={`${rule.item}を編集`}
                     >
                         <View style={{ flex: 1 }}>
                             <Text style={styles.listItemTitle}>{rule.item}</Text>
-                            <Text style={styles.listItemSub}>毎月{rule.day}日 | {rule.category} | タップで編集</Text>
+                            <Text style={styles.listItemSub}>毎月{rule.day}日 | {rule.type === 'income' ? '収入' : rule.category} | タップで編集</Text>
                         </View>
-                        <Text style={styles.listItemAmount}>¥{rule.amount.toLocaleString()}</Text>
+                        <Text style={[styles.listItemAmount, rule.type === 'income' && { color: c.success }]}>
+                            {rule.type === 'income' ? '+' : ''}¥{rule.amount.toLocaleString()}
+                        </Text>
                         <TouchableOpacity onPress={() => confirmDelete(rule)} style={styles.deleteBtn}>
                             <Text style={{ color: c.danger }}>削除</Text>
                         </TouchableOpacity>
@@ -194,6 +220,12 @@ const createStyles = (c: AppColors) => StyleSheet.create({
         color: c.text,
     },
     inlineRow: { flexDirection: 'row' },
+    typeRow: { flexDirection: 'row', gap: 8, marginBottom: 10 },
+    typeBtn: { flex: 1, paddingVertical: 10, borderRadius: 10, alignItems: 'center', backgroundColor: c.chip, borderWidth: 1, borderColor: c.border },
+    typeBtnActive: { backgroundColor: c.primary, borderColor: c.primary },
+    typeBtnIncome: { backgroundColor: c.success, borderColor: c.success },
+    typeBtnText: { fontSize: 14, fontWeight: '600', color: c.textSecondary },
+    typeBtnTextActive: { color: '#fff', fontWeight: '700' },
     categoryRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
     catBtn: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 16, backgroundColor: c.chip, borderWidth: 1, borderColor: c.border },
     catBtnActive: { backgroundColor: c.primary, borderColor: c.primary },

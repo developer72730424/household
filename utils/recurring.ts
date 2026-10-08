@@ -1,11 +1,12 @@
 // 固定費（毎月決まった日に発生する支出）の自動登録ロジック
-import { INCOME_LABEL, newEntryId, pad2, parseAmount, type Entry } from './entries.ts';
+import { INCOME_LABEL, newEntryId, pad2, parseAmount, type Entry, type EntryType } from './entries.ts';
 
 export interface RecurringRule {
     id: string;
     item: string;
     amount: number;
-    category: string;
+    type: EntryType;        // 収入（給与など）か支出（家賃など）か。古いデータは支出として読む
+    category: string;       // 収入のときは常に INCOME_LABEL
     day: number;            // 毎月の発生日（1〜28）
     lastGenerated: string;  // 最後に履歴へ追加した年月 "YYYY-MM"
 }
@@ -31,13 +32,17 @@ export function normalizeRule(raw: unknown): RecurringRule | null {
     const ym = parseYM(r.lastGenerated);
     const day = Number(r.day);
     if (amount === null || amount <= 0 || !ym || !Number.isInteger(day) || day < 1 || day > 28) return null;
-    const category = typeof r.category === 'string' && r.category.trim() && r.category.trim() !== INCOME_LABEL
-        ? r.category.trim()
-        : 'その他';
+    const type: EntryType = r.type === 'income' ? 'income' : 'expense';
+    const category = type === 'income'
+        ? INCOME_LABEL
+        : typeof r.category === 'string' && r.category.trim() && r.category.trim() !== INCOME_LABEL
+            ? r.category.trim()
+            : 'その他';
     return {
         id: typeof r.id === 'string' && r.id ? r.id : newEntryId(),
         item: typeof r.item === 'string' ? r.item.trim() : '',
         amount: Math.round(amount),
+        type,
         category,
         day,
         lastGenerated: toYM(ym.year, ym.monthIndex),
@@ -72,7 +77,7 @@ export function generateDueEntries(rules: RecurringRule[], today: Date = new Dat
                 item: rule.item,
                 amount: rule.amount,
                 category: rule.category,
-                type: 'expense',
+                type: rule.type,
                 date: `${key}-${pad2(rule.day)}`,
             });
             last = key;
